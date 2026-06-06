@@ -15,26 +15,41 @@
 
 ## 安装
 
+### 选择安装位置
+
+| 安装到 | 路径 | 生效范围 |
+|--------|------|----------|
+| **项目本地** | `your-project/.claude/` | 仅当前项目 |
+| **全局用户** | `~/.claude/` | 所有项目 |
+
 ### 方式一：手动复制（30 秒）
 
+**安装到项目本地：**
+
 ```bash
-# 1. 克隆仓库
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
-
-# 2. 复制到你的项目
 cp -r /tmp/meta-orchestrator/.claude /your-project/
-
-# 3. 在 Claude Code 中打开项目，生效
 ```
+
+**安装到全局（所有项目生效）：**
+
+```bash
+git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
+cp -rn /tmp/meta-orchestrator/.claude/* ~/.claude/
+```
+
+> `cp -rn` 不会覆盖已有文件，安全合并。如果 `~/.claude/` 不存在，先 `mkdir -p ~/.claude`。
 
 ### 方式二：AI 一键安装
 
-把下面这句话发给 Claude Code（或其他 AI 编码助手），它会自动拉取并安装：
+把下面对应的话发给 Claude Code，它会自动拉取并安装：
+
+**安装到当前项目：**
 
 ```
-从 https://github.com/youxing-max/Meta-Orchestrator 获取 meta-orchestrator
-项目，把 .claude/ 目录复制到当前项目根目录。如果当前项目没有
-CLAUDE.md，创建一个并写入：
+从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
+把 .claude/ 目录复制到当前项目根目录。然后在当前项目的 CLAUDE.md
+中写入以下内容（如果已有 CLAUDE.md 则追加到末尾）：
 
 ## Meta-Orchestrator
 
@@ -50,7 +65,20 @@ Before any substantial work:
 7. Propose workflow crystallization for repeatable patterns
 ```
 
-安装完成后的目录结构：
+**安装到全局（所有项目生效）：**
+
+```
+从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
+把 .claude/skills/ 和 .claude/workflows/ 合并复制到 ~/.claude/
+对应目录下，不要覆盖已有文件。然后创建或更新 ~/.claude/CLAUDE.md，
+写入以下内容：
+
+## Meta-Orchestrator
+
+**ALWAYS invoke `meta-orchestrator` skill at session start.**
+```
+
+安装完成后的目录结构（以项目本地为例）：
 
 ```
 your-project/
