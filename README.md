@@ -1,152 +1,198 @@
 # Meta-Orchestrator
 
-> DAG-based skill orchestration for Claude Code — inspired by [OpenSquilla](https://github.com/opensquilla/opensquilla)'s MetaSkill execution engine.
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/platform-Claude%20Code-orange.svg" alt="Platform: Claude Code">
+  <img src="https://img.shields.io/badge/inspiration-OpenSquilla-purple.svg" alt="Inspiration: OpenSquilla">
+  <img src="https://img.shields.io/badge/version-v1.0-green.svg" alt="Version: v1.0">
+</p>
 
-**Meta-Orchestrator** transforms Claude Code from a linear agent into a DAG-based workflow engine. It decomposes complex tasks, dispatches independent steps in parallel, routes work by complexity tier, handles failures gracefully, and automatically crystallizes repeated patterns into reusable workflows.
+> DAG 工作流编排引擎，将 Claude Code 从线性 Agent 升级为有向无环图执行引擎。灵感来自 [OpenSquilla](https://github.com/opensquilla/opensquilla) 的 MetaSkill 模型。
 
-Same budget, more capability, better results.
+**Meta-Orchestrator** 将复杂任务拆解为 DAG，同层独立步骤并行分发，按 T0-T3 复杂度分级路由模型，重复 2-3 次的复杂模式自动沉淀为可复用工作流。纯 Skill 实现，零外部依赖。
 
-## Why?
+---
 
-Claude Code with default behavior executes work sequentially. It relies on the model's memory to follow a plan. This works for simple tasks but breaks down when:
+## 安装
 
-- Multiple independent sub-tasks could run in parallel but run one-by-one
-- The model forgets a step or skips error handling
-- A workflow that worked well yesterday is forgotten and rebuilt from scratch
-- The same pattern (code review, deploy check, bug fix) is re-planned every time
+### 方式一：手动复制（30 秒）
 
-**Meta-Orchestrator solves this with a structured execution engine:**
+```bash
+# 1. 克隆仓库
+git clone https://github.com/youxing-max/-Meta-Orchestrator.git /tmp/meta-orchestrator
 
-| Without | With Meta-Orchestrator |
-|---|---|
-| Sequential execution by default | DAG decomposition with parallel dispatch |
-| Model decides what to do next | Dependency graph enforces correct order |
-| Repeated patterns re-planned every time | Crystallized into reusable `.yaml` workflows |
-| One model for everything | T0-T3 complexity tier routing (haiku → opus) |
-| Failures silently derail progress | Explicit `on_failure` fallback steps |
-| No execution visibility | TaskCreate tracking per DAG step |
+# 2. 复制到你的项目
+cp -r /tmp/meta-orchestrator/.claude /your-project/
 
-## Architecture
+# 3. 在 Claude Code 中打开项目，生效
+```
+
+### 方式二：AI 一键安装
+
+把下面这句话发给 Claude Code（或其他 AI 编码助手），它会自动拉取并安装：
 
 ```
-User Request
+从 https://github.com/youxing-max/-Meta-Orchestrator 获取 meta-orchestrator
+项目，把 .claude/ 目录复制到当前项目根目录。如果当前项目没有
+CLAUDE.md，创建一个并写入：
+
+## Meta-Orchestrator
+
+**ALWAYS invoke `meta-orchestrator` skill at session start.**
+
+Before any substantial work:
+1. Check `.claude/workflows/` for matching pre-defined workflows
+2. Classify complexity (T0 → haiku, T2 → sonnet, T3 → opus)
+3. Decompose into a DAG with `depends_on` edges
+4. Dispatch independent steps in parallel
+5. Track execution via TaskCreate
+6. Synthesize results
+7. Propose workflow crystallization for repeatable patterns
+```
+
+安装完成后的目录结构：
+
+```
+your-project/
+└── .claude/
+    ├── skills/
+    │   └── meta-orchestrator/
+    │       └── SKILL.md              # 核心编排引擎
+    └── workflows/
+        ├── code-review-pipeline.yaml # 并行代码审查
+        ├── deploy-checklist.yaml     # 部署前检查
+        ├── bug-fix-workflow.yaml     # Bug 修复流程
+        └── api-migration.yaml        # API 迁移方案
+```
+
+下次打开 Claude Code 即自动生效。
+
+---
+
+## 为什么需要 Meta-Orchestrator？
+
+Claude Code 默认按顺序执行任务，靠模型自身的"记忆"来完成多步骤工作。这在简单场景下没问题，但遇到复杂任务时会暴露问题：
+
+| 没有 Meta-Orchestrator | 有 Meta-Orchestrator |
+|---|---|
+| 顺序执行，即使子任务互不依赖 | DAG 分解，独立步骤并行分发 |
+| 模型凭记忆决定下一步 | 依赖图强制执行正确顺序 |
+| 每次都重新规划相同模式 | 重复 2-3 次后自动结晶为 `.yaml` 工作流 |
+| 一个模型干所有事 | T0-T3 分级路由（haiku → sonnet → opus） |
+| 失败步骤静默中断进度 | `on_failure` 显式回退处理 |
+| 无法感知执行进度 | 每个 DAG 步骤对应一个 Task 追踪 |
+
+核心原则：**用结构来保障执行，而不是指望模型自己做好。**
+
+---
+
+## 工作原理
+
+```
+用户请求
      │
      ▼
 ┌─────────────────────────────────────┐
-│ Step 0: Complexity Classification   │
+│ Step 0: 复杂度分级                  │
 │ T0 (haiku) → T1 → T2 (sonnet) → T3 │
 └──────────────┬──────────────────────┘
                ▼
 ┌─────────────────────────────────────┐
-│ Step 1: Check Existing Workflows    │
+│ Step 1: 检查已有工作流              │
 │ .claude/workflows/*.yaml            │
 └──────┬──────────────────┬───────────┘
-       │ Match?           │ No Match
+       │ 命中             │ 未命中
        ▼                  ▼
 ┌──────────────┐  ┌───────────────────┐
-│ Execute      │  │ Step 2: DAG       │
-│ workflow     │  │ Decomposition     │
-│ YAML         │  │                   │
+│ 执行已有     │  │ Step 2: DAG 分解  │
+│ 工作流 YAML  │  │                   │
 └──────────────┘  │ classify → agent  │
                   │ generate → skill  │
                   │ input   → tool    │
                   └────────┬──────────┘
                            ▼
 ┌─────────────────────────────────────┐
-│ Step 3: Parallel Dispatch           │
-│ Independent steps → single batch    │
+│ Step 3: 并行分发                   │
+│ 同层独立步骤 → 一个批次             │
 └──────────────┬──────────────────────┘
                ▼
 ┌─────────────────────────────────────┐
-│ Step 4: Track + Synthesize          │
-│ TaskCreate per step → auto merge    │
+│ Step 4: 追踪 + 综合输出            │
+│ TaskCreate 追踪每一步               │
 └──────────────┬──────────────────────┘
                ▼
 ┌─────────────────────────────────────┐
-│ Step 5: Workflow Crystallization    │
-│ Repeated pattern? → Save as .yaml   │
+│ Step 5: 工作流结晶                 │
+│ T2+ 且重复 2-3 次？→ 保存为 .yaml  │
 └─────────────────────────────────────┘
 ```
 
-### Step Types
+### 步骤类型
 
-| Kind | Purpose | Example |
-|------|---------|---------|
-| `classify` | Route based on one decision | "Is this a bug, feature, or refactor?" |
-| `agent` | Dispatch a sub-agent | Code review, security scan, implementation |
-| `generate` | Pure LLM generation, no tools | Summaries, reports, documentation |
-| `skill` | Invoke a named Claude Code skill | `code-review`, `tdd`, `security-review` |
-| `input` | Pause for structured user input | Approval gates, design reviews |
-| `tool` | Deterministic tool call | `Bash`, `Read`, `Write` |
+| 类型 | 用途 | 示例 |
+|------|------|------|
+| `classify` | 分类路由，输出一个选项实现 DAG 分支 | "这是 bug、功能还是重构？" |
+| `agent` | 分派子 Agent 执行推理或实现 | 代码审查、安全扫描、功能实现 |
+| `generate` | 纯 LLM 生成，不调用工具 | 总结、报告、文档生成 |
+| `skill` | 调用命名技能 | `tdd`、`security-review` |
+| `input` | 暂停收集用户结构化输入 | 审批关卡、设计评审 |
+| `tool` | 确定性工具调用 | `Bash`、`Read`、`Write` |
 
-### Complexity Tiers
+### 复杂度分级
 
-| Tier | Use Case | Model | Cost |
-|------|----------|-------|------|
-| **T0** | Lookup, read, explain | haiku | $ |
-| **T1** | Simple edit, single-file fix | haiku → escalate | $ |
-| **T2** | Feature, multi-file, refactor | sonnet | $$ |
-| **T3** | Architecture, novel design | opus | $$$ |
+| 级别 | 场景 | 模型 | 开销 |
+|------|------|------|------|
+| **T0** | 查找、阅读、解释 | haiku | $ |
+| **T1** | 简单编辑、单文件修复 | haiku → 按需升级 | $ |
+| **T2** | 功能开发、多文件、重构 | sonnet | $$ |
+| **T3** | 架构设计、深度推理 | opus | $$$ |
 
-## Quick Start
+---
 
-```bash
-cp -r .claude /your-project/
-cp CLAUDE.md /your-project/
-```
+## 使用方式
 
-Claude Code auto-discovers skills in `.claude/skills/` and reads `CLAUDE.md` at session start. The meta-orchestrator activates on the next session.
+### 自动激活（默认）
 
-Verify:
+正常使用 Claude Code 即可。非平凡任务自动触发编排：
 
 ```
-> 帮我全面审查一下代码
-```
-
-You should see the meta-orchestrator classify the task (T2), match `code-review-pipeline`, and dispatch parallel review agents.
-
-## Usage
-
-### Automatic (default)
-
-Just use Claude Code normally. Meta-Orchestrator activates for non-trivial tasks:
-
-```
-User: 帮我把 session 认证改成 JWT
+用户: 帮我把 session 认证改成 JWT
       ↓
 Meta-Orchestrator:
-  1. Classify: T2 (multi-file feature)
-  2. No matching workflow → ad-hoc DAG
+  1. 分级: T2（多文件功能开发）
+  2. 无匹配工作流 → 临时 DAG
   3. DAG: audit || research → design → implement → test || security → synthesize
-  4. Parallel dispatch: [audit, research] → [design] → [implement] → [test, security] → [synthesize]
-  5. Propose crystallization: "Save this as a reusable workflow?"
+  4. 并行分发: [audit, research] → [design] → [implement] → [test, security] → [synthesize]
+  5. 执行完毕，记录到模式记忆
 ```
 
-### Explicit workflow invocation
+### 意图匹配
 
-Use natural language that matches a workflow trigger:
+使用自然语言即可命中预定义工作流：
 
 ```
 > 上线前检查一下
-→ matches deploy-checklist.yaml trigger "上线前检查"
-→ executes: test || security → build → summary → notify
+→ 命中 deploy-checklist.yaml 触发器 "上线前检查"
+→ 执行: test || security → build → summary → notify
 ```
 
-### Creating reusable workflows
+### 工作流结晶
 
-After a complex task succeeds, meta-orchestrator proposes saving it. Say "每次/以后/记住" to auto-crystallize:
+T2+ 复杂任务被执行 2-3 次后，自动提议保存为可复用工作流。用户说"每次/以后/记住"则立即结晶，无需等待：
 
 ```
-> 每次改完代码后自动跑测试和lint检查，记住了
-→ detects "每次" + "记住" → crystallizes immediately
-→ .claude/workflows/auto-test-lint.yaml created
+> 每次改完代码后自动跑测试和 lint 检查，记住了
+→ 检测到 "每次" + "记住" → 立即结晶
+→ .claude/workflows/auto-test-lint.yaml 已创建
 ```
 
-## Workflow Examples
+---
+
+## 内置工作流
 
 ### 1. Code Review Pipeline
 
-Trigger: "全面审查", "安全审计", "code review"
+触发器：`全面审查` `安全审计` `code review` `代码审查`
 
 ```
 classify_scope → security_review || quality_review || infra_review → synthesize_report
@@ -154,7 +200,7 @@ classify_scope → security_review || quality_review || infra_review → synthes
 
 ### 2. Deploy Checklist
 
-Trigger: "上线前检查", "pre-deploy", "发版检查"
+触发器：`上线前检查` `pre-deploy` `发版检查`
 
 ```
 run_tests || security_scan → build → deploy_ready → notify
@@ -162,7 +208,7 @@ run_tests || security_scan → build → deploy_ready → notify
 
 ### 3. Bug Fix Workflow
 
-Trigger: "修bug", "fix bug", "debug", "修复"
+触发器：`修bug` `fix bug` `debug` `修复`
 
 ```
 classify_severity (P0→incident, P1-P3→diagnose)
@@ -174,7 +220,7 @@ classify_severity (P0→incident, P1-P3→diagnose)
 
 ### 4. API Migration
 
-Trigger: "API 迁移", "接口迁移", "migrate API"
+触发器：`API 迁移` `接口迁移` `migrate API`
 
 ```
 audit_endpoints || research_target || analyze_breaking
@@ -183,16 +229,18 @@ audit_endpoints || research_target || analyze_breaking
   → review_migration → migration_docs → synthesize
 ```
 
-## Workflow Authoring Guide
+---
+
+## 编写自定义工作流
 
 ```yaml
-name: my-workflow              # kebab-case identifier
-kind: meta                     # always "meta"
-description: One-line purpose
-triggers:                      # 2-5 natural phrases
+name: my-workflow              # kebab-case 标识符
+kind: meta                     # 固定值
+description: 一句话描述用途
+triggers:                      # 2-5 个自然语言触发短语
   - do the thing
   - 做这件事
-meta_priority: 10              # higher = preferred when multiple match
+meta_priority: 10              # 数值越大优先级越高
 always: false
 final_text_mode: auto          # auto | raw | step:<id>
 
@@ -200,8 +248,8 @@ composition:
   steps:
     - id: step_1
       kind: agent              # classify | agent | generate | skill | input | tool
-      description: What it does
-      depends_on: []           # empty = runs immediately (root)
+      description: 这一步做什么
+      depends_on: []           # 空 = 根步骤，立即并行执行
       agent_type: Explore
       model: haiku             # haiku | sonnet | opus
       prompt: "..."
@@ -209,7 +257,7 @@ composition:
     - id: step_2
       kind: generate
       depends_on: [step_1]
-      on_failure: fallback_id  # dormant — only runs if this step fails
+      on_failure: fallback_id  # 休眠 — 仅在父步骤失败时执行
       prompt: "..."
 
     - id: router
@@ -217,59 +265,45 @@ composition:
       output_choices: [A, B]
       route:
         - when: A
-          to: path_a           # only this branch executes
+          to: path_a           # 仅命中分支执行
         - when: B
           to: path_b
 ```
 
-### DAG Rules
+### DAG 规则
 
-1. Empty `depends_on` → run immediately in parallel
-2. Non-empty `depends_on` → wait for ALL named predecessors
-3. Independent steps at same depth → **always dispatched in one parallel batch**
-4. Graph must be **acyclic** — no circular dependencies
-5. Fallback steps are **dormant** — only run when parent fails
+1. `depends_on` 为空 → 立即并行执行
+2. `depends_on` 非空 → 等待所有前置步骤完成
+3. 同层独立步骤 → **必须在同一个批次中并行分发**
+4. 图必须 **无环** — 不允许循环依赖
+5. 回退步骤 **休眠** — 仅在父步骤失败时触发
 
-## Design Philosophy
+---
 
-Directly inspired by [OpenSquilla](https://github.com/opensquilla/opensquilla)'s MetaSkill system:
+## 设计哲学
+
+直接受 [OpenSquilla](https://github.com/opensquilla/opensquilla) MetaSkill 系统启发：
 
 | OpenSquilla | Meta-Orchestrator |
 |---|---|
-| External Python runtime enforces DAG | Claude follows DAG via skill instructions |
-| LightGBM + ONNX router classifies tasks | Claude classifies with keyword + context heuristics |
-| `meta_invoke()` tool triggers workflows | Intent matching against trigger phrases |
-| Proposal gate for human review | Crystallization proposal after successful DAG |
-| Risk-level sandbox | Claude Code permission system |
-| 20+ LLM backend routing | haiku/sonnet/opus tier routing |
+| 外部 Python 运行时强制 DAG | Claude 按 Skill 指令执行 DAG |
+| LightGBM + ONNX 路由分类 | Claude 按关键词 + 上下文启发式分类 |
+| `meta_invoke()` 工具触发工作流 | 意图匹配触发器短语 |
+| 人工审核关卡 | 重复 2-3 次后提议结晶 |
+| 风险级别沙箱 | Claude Code 权限系统 |
+| 20+ LLM 后端路由 | haiku/sonnet/opus 分级路由 |
 
-The core insight: **execution guarantee through structure, not through hoping the model does the right thing.**
+---
 
-## Directory Structure
+## 要求
 
-```
-.claude/
-├── skills/
-│   └── meta-orchestrator/
-│       └── SKILL.md              # The orchestration engine
-└── workflows/
-    ├── code-review-pipeline.yaml # Parallel security + quality review
-    ├── deploy-checklist.yaml     # Pre-deploy verification
-    ├── bug-fix-workflow.yaml     # Structured bug fix pipeline
-    └── api-migration.yaml        # API migration/replatforming
-CLAUDE.md                         # Session startup instructions
-README.md                         # This file
-```
+- [Claude Code](https://claude.ai/code)（任意较新版本）
+- 零外部依赖 — 完全运行在 Claude Code Skill 系统内
 
-## Requirements
+## 参考
 
-- [Claude Code](https://claude.ai/code) (any recent version)
-- No external dependencies — runs entirely within Claude's skill system
-
-## Reference
-
-- [OpenSquilla](https://github.com/opensquilla/opensquilla) — Token-efficient AI agent with MetaSkill system
-- [Claude Code Skills](https://docs.anthropic.com/en/docs/claude-code/skills)
+- [OpenSquilla](https://github.com/opensquilla/opensquilla) — Token 高效 AI Agent，首创 MetaSkill 系统
+- [Claude Code Skills](https://docs.anthropic.com/en/docs/claude-code/skills) — Claude Code 官方技能文档
 
 ## License
 
