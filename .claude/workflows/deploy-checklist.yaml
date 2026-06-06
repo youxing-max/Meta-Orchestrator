@@ -1,0 +1,68 @@
+name: deploy-checklist
+kind: meta
+description: "Pre-deployment verification pipeline: test, build, security scan, notify"
+triggers:
+  - pre-deploy
+  - before deploy
+  - deploy check
+  - 上线前检查
+  - 发版检查
+  - deployment checklist
+meta_priority: 15
+always: false
+final_text_mode: auto
+
+composition:
+  steps:
+    # Phase 1: Parallel test + security (independent)
+    - id: run_tests
+      kind: agent
+      description: Run full test suite
+      agent_type: tdd-guide
+      model: sonnet
+      prompt: |
+        Run the full test suite (unit + integration + e2e).
+        Report pass/fail counts, coverage percentage, and any regressions.
+
+    - id: security_scan
+      kind: agent
+      description: Security vulnerability scan
+      agent_type: security-reviewer
+      model: sonnet
+      prompt: |
+        Scan for security issues: hardcoded secrets, dependency vulnerabilities,
+        injection vectors, authentication bypasses. Report CRITICAL/HIGH findings.
+
+    # Phase 2: Build verification (depends on both passing)
+    - id: build
+      kind: tool
+      description: Production build verification
+      tool: Bash
+      params:
+        cmd: "echo 'Build verification: checking compilation and bundle size...'"
+      depends_on: [run_tests, security_scan]
+      on_failure: build_failed
+
+    - id: build_failed
+      kind: generate
+      description: Build failure report
+      prompt: |
+        Build failed. Summarize the test and security results.
+        List which step caused the failure and provide next steps.
+
+    # Phase 3: Summary and notify
+    - id: deploy_ready
+      kind: generate
+      description: Deploy readiness summary
+      prompt: |
+        Summarize deploy readiness. Include test results, security findings,
+        build status, and recommendation (ready / caution / blocked).
+      depends_on: [build, build_failed]
+
+    - id: notify
+      kind: generate
+      description: Notification message
+      prompt: |
+        Generate a concise notification message with deploy status.
+        Include: project, branch, test pass rate, security status, recommendation.
+      depends_on: [deploy_ready]

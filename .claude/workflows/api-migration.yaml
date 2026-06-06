@@ -1,0 +1,112 @@
+name: api-migration
+kind: meta
+description: "Structured API migration/replatforming pipeline: audit, design, implement, test, review"
+triggers:
+  - API migration
+  - migrate API
+  - replatform
+  - API 迁移
+  - 接口迁移
+  - 重构 API
+meta_priority: 10
+always: false
+final_text_mode: auto
+
+composition:
+  steps:
+    # Phase 1: Parallel audit + research
+    - id: audit_endpoints
+      kind: agent
+      description: Audit all existing endpoints
+      agent_type: Explore
+      model: haiku
+      prompt: |
+        Find every API endpoint: route, method, request/response shape,
+        auth requirements, consumers. Build a complete inventory.
+
+    - id: research_target
+      kind: agent
+      description: Research target platform patterns
+      agent_type: Explore
+      model: haiku
+      prompt: |
+        Research the target platform/framework's API patterns: routing,
+        middleware, error handling, auth. Find idiomatic examples.
+
+    - id: analyze_breaking
+      kind: generate
+      description: Breaking change analysis
+      prompt: |
+        Compare current vs target API patterns. List every breaking change:
+        URL changes, field renames, type changes, auth changes, removed endpoints.
+      depends_on: [audit_endpoints]
+
+    # Phase 2: Design
+    - id: design_migration
+      kind: generate
+      description: Design migration plan
+      prompt: |
+        Design the migration plan:
+        1. Migration order (which endpoints first)
+        2. Backward compatibility strategy (deprecation headers or redirects)
+        3. Consumer communication plan
+        4. Rollback strategy per endpoint
+      depends_on: [audit_endpoints, research_target, analyze_breaking]
+
+    - id: user_approve
+      kind: input
+      description: User approves the plan
+      prompt: |
+        Review the migration plan above. Approve or request changes?
+      schema:
+        decision: {type: enum, choices: [approved, changes_needed]}
+        feedback: {type: string}
+      depends_on: [design_migration]
+
+    # Phase 3: Implement + test
+    - id: implement_phase1
+      kind: agent
+      description: Implement first phase of migration
+      agent_type: general-purpose
+      model: sonnet
+      prompt: |
+        Implement the first phase of migration. Add deprecation notices.
+        Implement backward compatibility layer.
+      depends_on: [user_approve]
+
+    - id: test_migration
+      kind: agent
+      description: Test migrated endpoints
+      agent_type: tdd-guide
+      model: sonnet
+      prompt: |
+        Test: new endpoints work, backward compat works,
+        deprecation headers set, error responses correct format.
+      depends_on: [implement_phase1]
+
+    # Phase 4: Review + docs
+    - id: review_migration
+      kind: agent
+      description: Review migration
+      agent_type: code-reviewer
+      model: sonnet
+      prompt: |
+        Review: all breaking changes documented? backward compat correct?
+        deprecation clear? error handling robust?
+      depends_on: [implement_phase1, test_migration]
+
+    - id: migration_docs
+      kind: generate
+      description: Generate consumer migration docs
+      prompt: |
+        Generate migration docs: what changed (old vs new per endpoint),
+        timeline, code examples (old → new), FAQ.
+      depends_on: [review_migration]
+
+    - id: synthesize
+      kind: generate
+      description: Final summary
+      prompt: |
+        Summarize: endpoints migrated, breaking changes, backward compat,
+        docs generated, next phase items.
+      depends_on: [migration_docs]

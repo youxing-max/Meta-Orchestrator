@@ -1,0 +1,87 @@
+# Example: Full code review pipeline
+# Invoke with: "Run code-review-pipeline on <scope>"
+# Or auto-matched by intent: "Review all the auth code for security and quality"
+
+name: code-review-pipeline
+kind: meta
+description: Parallel security, quality, and architecture review with merged findings
+triggers:
+  - review auth code
+  - full code review
+  - security audit
+  - 全面审查
+  - 安全审计
+  - 代码审查
+  - code review
+meta_priority: 10
+always: false
+final_text_mode: auto
+
+composition:
+  steps:
+    # Phase 1: Classify scope (runs first)
+    - id: classify_scope
+      kind: classify
+      description: Classify the review scope
+      prompt: |
+        Is the review target primarily: security-sensitive code,
+        general application code, or infrastructure/ops code?
+      output_choices: [security_critical, general_app, infra_ops]
+      route:
+        - when: security_critical
+          to: security_review
+        - when: general_app
+          to: quality_review
+        - when: infra_ops
+          to: infra_review
+
+    # Phase 2: Parallel reviews (one or more run based on classify_scope result)
+    - id: security_review
+      kind: agent
+      description: Security vulnerability analysis
+      agent_type: security-reviewer
+      model: sonnet
+      prompt: |
+        Review the target code for security vulnerabilities.
+        Check: auth bypass, injection, hardcoded secrets, insecure crypto, CSRF, path traversal.
+        Report CRITICAL/HIGH/MEDIUM/LOW findings.
+      depends_on: [classify_scope]
+
+    - id: quality_review
+      kind: agent
+      description: Code quality and maintainability review
+      agent_type: code-reviewer
+      model: sonnet
+      prompt: |
+        Review for code quality: naming, function length, file size, nesting,
+        error handling, immutability, test coverage. Flag anti-patterns.
+      depends_on: [classify_scope]
+
+    - id: infra_review
+      kind: agent
+      description: Infrastructure and ops code review
+      agent_type: code-reviewer
+      model: sonnet
+      prompt: |
+        Review infra/ops code for: idempotency, error recovery, secret management,
+        resource cleanup, logging, monitoring gaps.
+      depends_on: [classify_scope]
+
+    # Phase 3: Synthesize (runs after all active branches complete)
+    - id: synthesize_report
+      kind: generate
+      description: Merge all review findings into one report
+      prompt: |
+        Merge findings from all completed review steps into a single report.
+        Group by severity. Deduplicate overlapping findings.
+        Provide actionable fix recommendations.
+        Format as a structured review report.
+      depends_on: [security_review, quality_review, infra_review]
+      on_failure: fallback_summary
+
+    - id: fallback_summary
+      kind: generate
+      description: Fallback if synthesis fails
+      prompt: |
+        Produce a brief summary from whatever review results are available.
+        Flag that full synthesis failed and list raw findings.

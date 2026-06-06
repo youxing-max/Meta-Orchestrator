@@ -1,0 +1,110 @@
+name: bug-fix-workflow
+kind: meta
+description: "Structured bug fix pipeline: reproduce, diagnose, fix, test, review"
+triggers:
+  - fix bug
+  - bug fix
+  - debug
+  - 修bug
+  - 修复
+  - 查bug
+meta_priority: 10
+always: false
+final_text_mode: auto
+
+composition:
+  steps:
+    # Phase 1: Classify severity
+    - id: classify_severity
+      kind: classify
+      description: Classify bug severity
+      prompt: |
+        Based on the bug description, classify severity:
+        P0 (critical) = data loss/security/outage
+        P1 (high) = core feature broken, no workaround
+        P2 (medium) = non-critical, workaround exists
+        P3 (low) = cosmetic/minor
+      output_choices: [P0, P1, P2, P3]
+      route:
+        - when: P0
+          to: incident_response
+        - when: P1
+          to: diagnose
+        - when: P2
+          to: diagnose
+        - when: P3
+          to: diagnose
+
+    - id: incident_response
+      kind: generate
+      description: P0 critical incident protocol
+      prompt: |
+        CRITICAL BUG. Generate incident response:
+        1. Assess blast radius (systems/users affected)
+        2. Can we rollback?
+        3. Who needs immediate notification?
+        4. Containment steps before fix
+
+    # Phase 2: Diagnose root cause
+    - id: diagnose
+      kind: agent
+      description: Diagnose root cause
+      agent_type: Explore
+      model: haiku
+      prompt: |
+        Investigate the bug: trace code path, identify root cause,
+        determine trigger conditions. Be specific: file, line, logic error.
+      depends_on: [classify_severity, incident_response]
+
+    - id: repro_steps
+      kind: generate
+      description: Document reproduction steps
+      prompt: |
+        Document clear step-by-step reproduction instructions.
+        Include: preconditions, exact steps, expected vs actual behavior.
+      depends_on: [diagnose]
+
+    # Phase 3: Fix + test (parallel)
+    - id: implement_fix
+      kind: agent
+      description: Implement minimal fix
+      agent_type: general-purpose
+      model: sonnet
+      prompt: |
+        Implement the minimal fix for the root cause.
+        No refactoring. Focus only on the bug.
+      depends_on: [diagnose]
+
+    - id: write_tests
+      kind: agent
+      description: Write regression tests
+      agent_type: tdd-guide
+      model: sonnet
+      prompt: |
+        Write regression tests: must fail without fix, pass with fix.
+      depends_on: [repro_steps]
+
+    # Phase 4: Verify and summarize
+    - id: review_fix
+      kind: agent
+      description: Review the fix
+      agent_type: code-reviewer
+      model: sonnet
+      prompt: |
+        Review the fix: minimal change? no side effects? follows patterns? tests adequate?
+      depends_on: [implement_fix, write_tests]
+
+    - id: verify_edge_cases
+      kind: generate
+      description: Edge case analysis
+      prompt: |
+        What similar inputs/conditions could trigger the same class of bug?
+        List additional tests needed.
+      depends_on: [implement_fix, write_tests]
+
+    - id: synthesize
+      kind: generate
+      description: Final summary
+      prompt: |
+        Summarize: bug, root cause, fix, tests, edge cases, follow-ups.
+      depends_on: [review_fix, verify_edge_cases]
