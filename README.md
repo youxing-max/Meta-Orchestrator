@@ -19,7 +19,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/youxing-max/-Meta-Orchestrator.git /tmp/meta-orchestrator
+git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
 
 # 2. 复制到你的项目
 cp -r /tmp/meta-orchestrator/.claude /your-project/
@@ -32,7 +32,7 @@ cp -r /tmp/meta-orchestrator/.claude /your-project/
 把下面这句话发给 Claude Code（或其他 AI 编码助手），它会自动拉取并安装：
 
 ```
-从 https://github.com/youxing-max/-Meta-Orchestrator 获取 meta-orchestrator
+从 https://github.com/youxing-max/Meta-Orchestrator 获取 meta-orchestrator
 项目，把 .claude/ 目录复制到当前项目根目录。如果当前项目没有
 CLAUDE.md，创建一个并写入：
 
