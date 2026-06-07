@@ -62,6 +62,11 @@ composition:
         decision: {type: enum, choices: [approved, changes_needed]}
         feedback: {type: string}
       depends_on: [design_migration]
+      route:
+        - when: approved
+          to: implement_phase1
+        - when: changes_needed
+          to: design_migration
 
     # Phase 3: Implement + test
     - id: implement_phase1

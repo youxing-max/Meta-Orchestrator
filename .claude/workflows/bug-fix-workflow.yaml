@@ -44,6 +44,8 @@ composition:
         2. Can we rollback?
         3. Who needs immediate notification?
         4. Containment steps before fix
+      route:
+        - to: diagnose
 
     # Phase 2: Diagnose root cause
     - id: diagnose
@@ -54,7 +56,7 @@ composition:
       prompt: |
         Investigate the bug: trace code path, identify root cause,
         determine trigger conditions. Be specific: file, line, logic error.
-      depends_on: [classify_severity, incident_response]
+      depends_on: [classify_severity]
 
     - id: repro_steps
       kind: generate
