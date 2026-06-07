@@ -114,6 +114,13 @@ params: {content: "...", ...}
 ```
 MCP tools follow the `mcp__<server>__<tool>` convention. Any tool available in the current session can be used.
 
+**Cross-platform tool commands:** When `tool: Bash` is used in a workflow, the command MUST work on Linux, macOS, and Windows. Prefer:
+- `python -c "..."` or `node -e "..."` — works everywhere
+- `git` commands — identical on all platforms
+- `npx` / `pip` / `cargo` — package managers are cross-platform
+- Avoid: `rm -rf`, `sed -i`, `/tmp/` paths, shell-specific syntax
+- If a platform-specific command is unavoidable, prefer `python` as the runner
+
 ### DAG Rules (ENFORCED)
 
 1. Steps with **no** `depends_on` or empty `depends_on` → run **immediately in parallel**
@@ -389,6 +396,7 @@ Before crystallizing ANY workflow (either by 3-occurrence threshold or automatic
 - [ ] **Merge correctness**: steps after conditional branches depend on the common ancestor, not on branch-specific targets
 - [ ] **Acyclicity**: no circular dependency chain (step A → B → ... → A)
 - [ ] **No hardcoded paths**: trigger phrases and prompts are generic, not tied to specific file paths or project names
+- [ ] **Cross-platform commands**: `tool: Bash` commands use portable syntax (`python`, `git`, `npx`) — no `rm -rf`, `sed -i`, `/tmp/`, or shell-only constructs
 
 ### Workflow Self-Healing (Auto-Optimize Existing Workflows)
 
@@ -404,6 +412,7 @@ When executing an existing workflow, if it exhibits ANY of these symptoms, auto-
 | A route branch merges into a step that depends on ALL branches (not the common ancestor) | Fix the merge point to depend on the common ancestor (DAG Rule 7) |
 | A step has no `on_failure` but is a key risk point (agent execution, external tool call) | Add `on_failure` fallback with a generate step that reports the failure |
 | A `tool` step uses an echo/placeholder command instead of actual work | Replace with a real tool invocation or document it as a stub with a comment |
+| A `tool: Bash` command is platform-specific (`rm -rf`, `sed -i`, `/tmp/`, etc.) | Replace with cross-platform equivalent (`python -c "..."`, `git`, `npx`) |
 
 #### Self-Healing Process
 
@@ -422,6 +431,7 @@ When listing workflows or at session start, quickly scan all `.yaml` files in `.
 - Deadlock patterns (any step depending on a fallback-only or conditional-only step)
 - Missing `on_failure` on `agent`/`tool` steps
 - Placeholder `tool` commands (`echo`, `true`, empty params)
+- Platform-specific `tool: Bash` commands (`rm -rf`, `sed -i`, `/tmp/` paths)
 - Route coverage gaps
 
 Flag issues to the user as a brief summary. Fix critical (deadlock) issues immediately.
