@@ -22,43 +22,117 @@
 | **Claude Code** | `your-project/.claude/` | `~/.claude/` | 仅当前项目 / 所有项目 |
 | **Codex** | `your-project/.codex/` | `~/.codex/` | 仅当前项目 / 所有项目 |
 
-### 方式一：手动复制（30 秒）
+### 方式一：手动复制
 
-**Claude Code — 安装到项目本地：**
+<details open>
+<summary><b>Linux / macOS</b></summary>
+
+**Claude Code — 项目本地：**
 
 ```bash
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
 cp -r /tmp/meta-orchestrator/.claude /your-project/
 ```
 
-**Claude Code — 安装到全局（所有项目生效）：**
+**Claude Code — 全局：**
 
 ```bash
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
+mkdir -p ~/.claude
 cp -rn /tmp/meta-orchestrator/.claude/* ~/.claude/
 ```
 
-**Codex — 安装到项目本地：**
+**Codex — 项目本地：**
 
 ```bash
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
 cp -r /tmp/meta-orchestrator/.codex /your-project/
 ```
 
-**Codex — 安装到全局：**
+**Codex — 全局：**
 
 ```bash
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
+mkdir -p ~/.codex
 cp -rn /tmp/meta-orchestrator/.codex/* ~/.codex/
 ```
 
-> `cp -rn` 不会覆盖已有文件，安全合并。如果目标目录不存在，先 `mkdir -p` 创建。
+> `cp -rn` 不覆盖已有文件，安全合并。
+
+</details>
+
+<details>
+<summary><b>Windows (PowerShell)</b></summary>
+
+**Claude Code — 项目本地：**
+
+```powershell
+git clone https://github.com/youxing-max/Meta-Orchestrator.git $env:TEMP\meta-orchestrator
+Copy-Item -Recurse $env:TEMP\meta-orchestrator\.claude .\
+```
+
+**Claude Code — 全局：**
+
+```powershell
+git clone https://github.com/youxing-max/Meta-Orchestrator.git $env:TEMP\meta-orchestrator
+New-Item -ItemType Directory -Force -Path $env:USERPROFILE\.claude
+Copy-Item -Recurse -Force $env:TEMP\meta-orchestrator\.claude\* $env:USERPROFILE\.claude\
+```
+
+**Codex — 项目本地：**
+
+```powershell
+git clone https://github.com/youxing-max/Meta-Orchestrator.git $env:TEMP\meta-orchestrator
+Copy-Item -Recurse $env:TEMP\meta-orchestrator\.codex .\
+```
+
+**Codex — 全局：**
+
+```powershell
+git clone https://github.com/youxing-max/Meta-Orchestrator.git $env:TEMP\meta-orchestrator
+New-Item -ItemType Directory -Force -Path $env:USERPROFILE\.codex
+Copy-Item -Recurse -Force $env:TEMP\meta-orchestrator\.codex\* $env:USERPROFILE\.codex\
+```
+
+> `$env:TEMP` 等价于 `%TEMP%`，`$env:USERPROFILE` 等价于 `%USERPROFILE%`。
+
+</details>
+
+<details>
+<summary><b>Windows (CMD)</b></summary>
+
+**Claude Code — 项目本地：**
+
+```cmd
+git clone https://github.com/youxing-max/Meta-Orchestrator.git %TEMP%\meta-orchestrator
+xcopy /E /I %TEMP%\meta-orchestrator\.claude .claude
+```
+
+**Claude Code — 全局：**
+
+```cmd
+git clone https://github.com/youxing-max/Meta-Orchestrator.git %TEMP%\meta-orchestrator
+if not exist %USERPROFILE%\.claude mkdir %USERPROFILE%\.claude
+xcopy /E /I /Y %TEMP%\meta-orchestrator\.claude\* %USERPROFILE%\.claude\
+```
+
+**Codex — 同理，把 `.claude` 替换为 `.codex`：**
+
+```cmd
+git clone https://github.com/youxing-max/Meta-Orchestrator.git %TEMP%\meta-orchestrator
+xcopy /E /I %TEMP%\meta-orchestrator\.codex .codex
+```
+
+</details>
 
 ### 方式二：AI 一键安装
 
 把下面对应的话发给 Claude Code（或 Codex），它会自动拉取并安装：
 
-**Claude Code — 安装到当前项目：**
+<details open>
+<summary><b>Claude Code</b></summary>
+
+**安装到当前项目：**
 
 ```
 从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
@@ -79,7 +153,25 @@ Before any substantial work:
 7. Propose workflow crystallization for repeatable patterns
 ```
 
-**Codex — 安装到当前项目：**
+**安装到全局：**
+
+```
+从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
+把 .claude/skills/ 和 .claude/workflows/ 合并复制到 ~/.claude/
+对应目录下，不要覆盖已有文件。然后创建或更新 ~/.claude/CLAUDE.md，
+写入以下内容：
+
+## Meta-Orchestrator
+
+**ALWAYS invoke `meta-orchestrator` skill at session start.**
+```
+
+</details>
+
+<details>
+<summary><b>Codex</b></summary>
+
+**安装到当前项目：**
 
 ```
 从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
@@ -99,19 +191,20 @@ Before any substantial work:
 6. Propose workflow crystallization for repeatable patterns
 ```
 
-**安装到全局平台：**
+**安装到全局：**
 
 ```
 从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
-把 .claude/skills/ 和 .claude/workflows/ 合并复制到 ~/.claude/
-对应目录下（Codex 用户用 .codex/），不要覆盖已有文件。
-然后创建或更新 ~/.claude/CLAUDE.md（Codex 用 CODEX.md），
+把 .codex/skills/ 和 .codex/workflows/ 合并复制到 ~/.codex/
+对应目录下，不要覆盖已有文件。然后创建或更新 ~/.codex/CODEX.md，
 写入以下内容：
 
 ## Meta-Orchestrator
 
 **ALWAYS invoke `meta-orchestrator` skill at session start.**
 ```
+
+</details>
 
 安装完成后的目录结构：
 
@@ -379,8 +472,10 @@ composition:
 
 ## 要求
 
-- [Claude Code](https://claude.ai/code)（任意较新版本）
-- 零外部依赖 — 完全运行在 Claude Code Skill 系统内
+- [Claude Code](https://claude.ai/code) 或 [Codex](https://github.com/openai/codex)（任意较新版本）
+- Git（用于克隆仓库）
+- 零外部依赖 — 完全运行在 AI 编程助手的 Skill 系统内
+- 支持 **Linux**、**macOS**、**Windows**（PowerShell / CMD）
 
 ## 参考
 
