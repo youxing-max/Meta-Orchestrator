@@ -102,11 +102,17 @@ Supports `route` to branch on user response, same syntax as `classify`:
       to: revise_plan
 ```
 
-**`tool`** -- Deterministic tool call with narrow parameters.
+**`tool`** -- Deterministic tool call (Bash, Read, Write, MCP tools, etc.)
 ```
+# Direct tool call
 tool: Bash | Read | Write | ...
 params: {arg: value, ...}
+
+# MCP tool call (mcp__<server>__<tool>)
+tool: mcp__headroom__headroom_compress
+params: {content: "...", ...}
 ```
+MCP tools follow the `mcp__<server>__<tool>` convention. Any tool available in the current session can be used.
 
 ### DAG Rules (ENFORCED)
 

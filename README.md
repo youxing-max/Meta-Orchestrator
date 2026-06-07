@@ -168,7 +168,7 @@ Claude Code 默认按顺序执行任务，靠模型自身的"记忆"来完成多
 | `generate` | 纯 LLM 生成，不调用工具 | 总结、报告、文档生成 |
 | `skill` | 调用命名技能 | `tdd`、`security-review` |
 | `input` | 暂停收集用户结构化输入 | 审批关卡、设计评审 |
-| `tool` | 确定性工具调用 | `Bash`、`Read`、`Write` |
+| `tool` | 确定性工具调用（Bash, Read, Write, MCP 等） | 构建、文件操作、MCP API 调用 |
 
 ### 复杂度分级
 
@@ -289,8 +289,15 @@ composition:
     - id: step_2
       kind: generate
       depends_on: [step_1]
-      on_failure: fallback_id  # 休眠 — 仅在父步骤失败时执行
       prompt: "..."
+
+    - id: step_3
+      kind: tool               # Bash/Read/Write 或 MCP 工具
+      tool: mcp__headroom__headroom_compress  # MCP: mcp__<server>__<tool>
+      params:
+        content: "{{step_2.output}}"   # 引用上游步骤产出
+      depends_on: [step_2]
+      on_failure: fallback_id   # 休眠 — 仅在父步骤失败时执行
 
     - id: router
       kind: classify
