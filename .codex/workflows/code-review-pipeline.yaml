@@ -19,16 +19,7 @@ final_text_mode: auto
 
 composition:
   steps:
-    # Phase 1: Classify scope (runs first)
-    - id: classify_scope
-      kind: classify
-      description: Tag the review scope (all reviews run in parallel regardless)
-      prompt: |
-        Is the review target primarily: security-sensitive code,
-        general application code, or infrastructure/ops code?
-      output_choices: [security_critical, general_app, infra_ops]
-
-    # Phase 2: Parallel reviews (one or more run based on classify_scope result)
+    # Phase 1: Parallel reviews (all three run concurrently)
     - id: security_review
       kind: agent
       description: Security vulnerability analysis
@@ -38,7 +29,6 @@ composition:
         Review the target code for security vulnerabilities.
         Check: auth bypass, injection, hardcoded secrets, insecure crypto, CSRF, path traversal.
         Report CRITICAL/HIGH/MEDIUM/LOW findings.
-      depends_on: [classify_scope]
 
     - id: quality_review
       kind: agent
@@ -48,7 +38,6 @@ composition:
       prompt: |
         Review for code quality: naming, function length, file size, nesting,
         error handling, immutability, test coverage. Flag anti-patterns.
-      depends_on: [classify_scope]
 
     - id: infra_review
       kind: agent
@@ -58,7 +47,6 @@ composition:
       prompt: |
         Review infra/ops code for: idempotency, error recovery, secret management,
         resource cleanup, logging, monitoring gaps.
-      depends_on: [classify_scope]
 
     # Phase 3: Synthesize (runs after all active branches complete)
     - id: synthesize_report

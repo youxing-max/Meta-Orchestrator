@@ -5,6 +5,8 @@ triggers:
   - 对比分析
   - 多维度评估
   - comparative analysis
+  - parallel analysis
+  - 并行分析
   - 分析并给出建议
   - multi-angle analysis
 meta_priority: 8
