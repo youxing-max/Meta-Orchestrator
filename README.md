@@ -2,12 +2,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
-  <img src="https://img.shields.io/badge/platform-Claude%20Code-orange.svg" alt="Platform: Claude Code">
+  <img src="https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Codex-orange.svg" alt="Platform: Claude Code | Codex">
   <img src="https://img.shields.io/badge/inspiration-OpenSquilla-purple.svg" alt="Inspiration: OpenSquilla">
   <img src="https://img.shields.io/badge/version-v1.0-green.svg" alt="Version: v1.0">
 </p>
 
-> DAG 工作流编排引擎，将 Claude Code 从线性 Agent 升级为有向无环图执行引擎。灵感来自 [OpenSquilla](https://github.com/opensquilla/opensquilla) 的 MetaSkill 模型。
+> DAG 工作流编排引擎，将 Claude Code / Codex 从线性 Agent 升级为有向无环图执行引擎。灵感来自 [OpenSquilla](https://github.com/opensquilla/opensquilla) 的 MetaSkill 模型。
 
 **Meta-Orchestrator** 将复杂任务拆解为 DAG，同层独立步骤并行分发，按 T0-T3 复杂度分级路由模型，重复 3 次以上的复杂模式自动沉淀为可复用工作流，已有工作流出错时自愈修复。纯 Skill 实现，零外部依赖。
 
@@ -15,36 +15,50 @@
 
 ## 安装
 
-### 选择安装位置
+### 选择平台与位置
 
-| 安装到 | 路径 | 生效范围 |
-|--------|------|----------|
-| **项目本地** | `your-project/.claude/` | 仅当前项目 |
-| **全局用户** | `~/.claude/` | 所有项目 |
+| 平台 | 项目本地路径 | 全局路径 | 生效范围 |
+|------|-------------|---------|----------|
+| **Claude Code** | `your-project/.claude/` | `~/.claude/` | 仅当前项目 / 所有项目 |
+| **Codex** | `your-project/.codex/` | `~/.codex/` | 仅当前项目 / 所有项目 |
 
 ### 方式一：手动复制（30 秒）
 
-**安装到项目本地：**
+**Claude Code — 安装到项目本地：**
 
 ```bash
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
 cp -r /tmp/meta-orchestrator/.claude /your-project/
 ```
 
-**安装到全局（所有项目生效）：**
+**Claude Code — 安装到全局（所有项目生效）：**
 
 ```bash
 git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
 cp -rn /tmp/meta-orchestrator/.claude/* ~/.claude/
 ```
 
-> `cp -rn` 不会覆盖已有文件，安全合并。如果 `~/.claude/` 不存在，先 `mkdir -p ~/.claude`。
+**Codex — 安装到项目本地：**
+
+```bash
+git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
+cp -r /tmp/meta-orchestrator/.codex /your-project/
+```
+
+**Codex — 安装到全局：**
+
+```bash
+git clone https://github.com/youxing-max/Meta-Orchestrator.git /tmp/meta-orchestrator
+cp -rn /tmp/meta-orchestrator/.codex/* ~/.codex/
+```
+
+> `cp -rn` 不会覆盖已有文件，安全合并。如果目标目录不存在，先 `mkdir -p` 创建。
 
 ### 方式二：AI 一键安装
 
-把下面对应的话发给 Claude Code，它会自动拉取并安装：
+把下面对应的话发给 Claude Code（或 Codex），它会自动拉取并安装：
 
-**安装到当前项目：**
+**Claude Code — 安装到当前项目：**
 
 ```
 从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
@@ -65,12 +79,33 @@ Before any substantial work:
 7. Propose workflow crystallization for repeatable patterns
 ```
 
-**安装到全局（所有项目生效）：**
+**Codex — 安装到当前项目：**
+
+```
+从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
+把 .codex/ 目录复制到当前项目根目录。然后在当前项目的 CODEX.md
+中写入以下内容（如果已有 CODEX.md 则追加到末尾）：
+
+## Meta-Orchestrator
+
+**ALWAYS invoke `meta-orchestrator` skill at session start.**
+
+Before any substantial work:
+1. Check `.codex/workflows/` for matching pre-defined workflows
+2. Classify complexity (T0 → haiku, T2 → sonnet, T3 → opus)
+3. Decompose into a DAG with `depends_on` edges
+4. Dispatch independent steps in parallel
+5. Synthesize results
+6. Propose workflow crystallization for repeatable patterns
+```
+
+**安装到全局平台：**
 
 ```
 从 https://github.com/youxing-max/Meta-Orchestrator 获取项目，
 把 .claude/skills/ 和 .claude/workflows/ 合并复制到 ~/.claude/
-对应目录下，不要覆盖已有文件。然后创建或更新 ~/.claude/CLAUDE.md，
+对应目录下（Codex 用户用 .codex/），不要覆盖已有文件。
+然后创建或更新 ~/.claude/CLAUDE.md（Codex 用 CODEX.md），
 写入以下内容：
 
 ## Meta-Orchestrator
@@ -78,21 +113,24 @@ Before any substantial work:
 **ALWAYS invoke `meta-orchestrator` skill at session start.**
 ```
 
-安装完成后的目录结构（以项目本地为例）：
+安装完成后的目录结构：
 
 ```
 your-project/
-└── .claude/
-    ├── .pattern-memory.yaml           # 跨会话模式追踪
-    ├── skills/
-    │   └── meta-orchestrator/
-    │       └── SKILL.md               # 核心编排引擎 + 自愈 + 防错
-    └── workflows/
-        ├── code-review-pipeline.yaml  # 并行代码审查
-        ├── deploy-checklist.yaml      # 部署前检查
-        ├── bug-fix-workflow.yaml      # Bug 修复流程
-        ├── api-migration.yaml         # API 迁移方案
-        └── parallel-analysis.yaml     # 多源并行分析
+├── .claude/              # Claude Code 用户
+│   ├── .pattern-memory.yaml
+│   ├── skills/
+│   │   └── meta-orchestrator/
+│   │       └── SKILL.md
+│   └── workflows/
+│       ├── code-review-pipeline.yaml
+│       ├── deploy-checklist.yaml
+│       ├── bug-fix-workflow.yaml
+│       ├── api-migration.yaml
+│       └── parallel-analysis.yaml
+│
+└── .codex/               # Codex 用户（内容相同）
+    └── ...
 ```
 
 下次打开 Claude Code 即自动生效。

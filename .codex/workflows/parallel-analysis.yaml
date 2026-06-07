@@ -1,0 +1,46 @@
+name: parallel-analysis
+kind: meta
+description: "Parallel multi-source analysis with synthesis report. Two agents analyze different dimensions concurrently, then a generate step merges findings."
+triggers:
+  - 对比分析
+  - 多维度评估
+  - comparative analysis
+  - 分析并给出建议
+  - multi-angle analysis
+meta_priority: 8
+always: false
+final_text_mode: auto
+
+composition:
+  steps:
+    # Phase 1: Parallel analysis (two agents run concurrently)
+    - id: analyze_primary
+      kind: agent
+      description: Primary dimension analysis
+      agent_type: Explore
+      model: sonnet
+      prompt: |
+        Analyze the primary dimension of the task.
+        Gather data, trace code paths, read relevant files.
+        Be thorough and provide specific findings.
+
+    - id: analyze_secondary
+      kind: agent
+      description: Secondary dimension analysis
+      agent_type: Explore
+      model: sonnet
+      prompt: |
+        Analyze the secondary dimension of the task.
+        Cover complementary angles that the primary analysis may miss.
+        Be thorough and provide specific findings.
+
+    # Phase 2: Synthesize (runs after both agents complete)
+    - id: synthesize
+      kind: generate
+      description: Merge findings into a single recommendation
+      prompt: |
+        Synthesize findings from both analysis dimensions.
+        Cross-reference conflicts, resolve contradictions.
+        Produce a concise recommendation with clear rationale.
+        Format as a structured report with key takeaways.
+      depends_on: [analyze_primary, analyze_secondary]

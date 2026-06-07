@@ -1,0 +1,6 @@
+# Pattern memory for crystallization tracking.
+# Records ad-hoc DAG patterns that have been observed but not yet
+# reached the 3-occurrence threshold for crystallization.
+# See SKILL.md Step 5 for the full crystallization rules.
+
+patterns: []
