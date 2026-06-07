@@ -88,6 +88,19 @@ args: <optional arguments>
 prompt: <what to ask>
 schema: {field: type, ...}
 ```
+Supports `route` to branch on user response, same syntax as `classify`:
+```yaml
+- id: user_approve
+  kind: input
+  prompt: "Approve the plan?"
+  schema:
+    decision: {type: enum, choices: [approved, changes_needed]}
+  route:
+    - when: approved
+      to: next_step
+    - when: changes_needed
+      to: revise_plan
+```
 
 **`tool`** -- Deterministic tool call with narrow parameters.
 ```
@@ -102,6 +115,12 @@ params: {arg: value, ...}
 3. Independent steps at the same depth → **MUST run in parallel** (single Agent call with multiple agents)
 4. The graph must be **acyclic** -- no circular dependencies
 5. Each step ID must be unique within the DAG
+6. **depends_on must ONLY reference steps GUARANTEED to execute.** Do NOT depend on:
+   - Steps reachable only via `classify` route branches (conditional execution)
+   - Steps declared as `on_failure` fallback targets (dormant until error)
+   Before writing a dependency, ask: "does this predecessor ALWAYS run?"
+7. **Merge points after conditional routes** depend on the last common ancestor BEFORE the branch, not the branch targets. Branch targets chain forward via their own routes.
+8. **`on_failure` fallback steps** are dormant. They execute ONLY as error recovery. No other step may list them in `depends_on`. The fallback replaces its parent in the DAG flow on failure — dependents of the parent resolve against whichever executed (parent or fallback).
 
 ### Routing
 
@@ -197,8 +216,9 @@ For any non-trivial task:
 
 - [ ] All steps completed or failed gracefully
 - [ ] Final synthesis delivered to user
-- [ ] T2+ task with novel DAG? → Record pattern signature in `.claude/workflows/.pattern-memory.yaml`
-- [ ] Pattern count >= 2 (3rd occurrence)? → Propose crystallization
+- [ ] **Workflow executed with issues?** → Flag for self-healing (see Step 5, "Workflow Self-Healing")
+- [ ] T2+ task with novel DAG? → Record pattern signature in `.claude/.pattern-memory.yaml`
+- [ ] Pattern count >= 3 (3rd occurrence)? → Propose crystallization
 - [ ] User said "每次/以后/记住"? → Crystallize immediately without asking
 
 ## Anti-Patterns
@@ -211,10 +231,11 @@ For any non-trivial task:
 | Run agents one at a time when they don't depend on each other | Batch parallel Agent calls |
 | Skip tracking for complex DAGs | TaskCreate per step |
 | Let a failed step silently derail the DAG | on_failure fallback |
+| Depend on steps that may never execute (conditional routes, fallbacks) | Only depend on guaranteed-execution steps |
 
 ## Step 5: Workflow Crystallization (Save Repeated Patterns Only)
 
-Workflow crystallization saves PROVEN patterns — not every ad-hoc DAG. The rule: a pattern must be observed **2-3 times** before it earns a permanent `.yaml` file. One-off workflows are never saved.
+Workflow crystallization saves PROVEN patterns — not every ad-hoc DAG. The rule: a pattern must be observed **3 times** before it earns a permanent `.yaml` file. One-off workflows are never saved.
 
 ### Complexity Gate
 
@@ -222,10 +243,10 @@ Only T2 and T3 tasks are eligible for crystallization. T0 (lookup/explain) and T
 
 ### Pattern Memory File
 
-Use `.claude/workflows/.pattern-memory.yaml` to track ad-hoc DAG patterns across sessions:
+Use `.claude/.pattern-memory.yaml` to track ad-hoc DAG patterns across sessions:
 
 ```yaml
-# .claude/workflows/.pattern-memory.yaml
+# .claude/.pattern-memory.yaml
 patterns:
   - signature: "agent|agent|generate→agent|generate→generate"
     task_family: "Multi-phase implementation with parallel audit and review"
@@ -243,7 +264,7 @@ A signature is the step-kind sequence with `|` for parallel groups, `→` for se
 
 **1st occurrence (count = 1):**
 - Compute the pattern signature
-- If no matching signature exists in `.pattern-memory.yaml`, add it with count=1
+- If no matching signature exists in `.claude/.pattern-memory.yaml`, add it with count=1
 - Do NOT propose crystallization — one occurrence is not enough
 - Do NOT mention it to the user
 
@@ -251,7 +272,7 @@ A signature is the step-kind sequence with `|` for parallel groups, `→` for se
 - Increment count to 2
 - Still do NOT propose yet — borderline, observe one more time
 
-**3rd occurrence (count >= 2, i.e., 3+ times):**
+**3rd occurrence (count >= 3):**
 - NOW propose crystallization:
   ```
   This workflow pattern has been used 3 times now. Save it for reuse?
@@ -262,7 +283,7 @@ A signature is the step-kind sequence with `|` for parallel groups, `→` for se
 
   Save to .claude/workflows/<name>.yaml? [y/n/edit]
   ```
-- If user approves, write the YAML and remove the pattern from `.pattern-memory.yaml`
+- If user approves, write the YAML and remove the pattern from `.claude/.pattern-memory.yaml`
 
 ### Automatic Crystallization (Bypasses Repetition Threshold)
 
@@ -273,6 +294,53 @@ If the user says "每次/以后/always/今后/记住" explicitly, crystallize **
 
 This is the only case where a single-occurrence pattern gets saved.
 
+### Crystallization Validation Checklist (MUST PASS before writing .yaml)
+
+Before crystallizing ANY workflow (either by 3-occurrence threshold or automatic bypass), validate the DAG against these rules. If any check fails, fix the DAG FIRST, then crystallize.
+
+- [ ] **No deadlock**: every `depends_on` target is a step that ALWAYS executes (not conditional, not a fallback)
+- [ ] **Route completeness**: every `output_choices` value in `classify`/`input` steps has a matching `route.when` entry
+- [ ] **Fallback isolation**: `on_failure` targets appear ONLY as `on_failure` values, never in another step's `depends_on`
+- [ ] **Merge correctness**: steps after conditional branches depend on the common ancestor, not on branch-specific targets
+- [ ] **Acyclicity**: no circular dependency chain (step A → B → ... → A)
+- [ ] **No hardcoded paths**: trigger phrases and prompts are generic, not tied to specific file paths or project names
+
+### Workflow Self-Healing (Auto-Optimize Existing Workflows)
+
+When executing an existing workflow, if it exhibits ANY of these symptoms, auto-fix it and update the `.yaml` file:
+
+#### Detection Triggers
+
+| Symptom | Auto-Fix |
+|---------|----------|
+| A step hangs indefinitely (deadlock detected) | Analyze `depends_on` vs route/fallback reachability, remove unreachable dependencies |
+| A step's `on_failure` target is listed in another step's `depends_on` | Remove the fallback from `depends_on`, apply DAG Rule 8 |
+| A `classify`/`input` route is missing coverage for some `output_choices` | Add missing route entries or a default route |
+| A route branch merges into a step that depends on ALL branches (not the common ancestor) | Fix the merge point to depend on the common ancestor (DAG Rule 7) |
+| A step has no `on_failure` but is a key risk point (agent execution, external tool call) | Add `on_failure` fallback with a generate step that reports the failure |
+| A `tool` step uses an echo/placeholder command instead of actual work | Replace with a real tool invocation or document it as a stub with a comment |
+
+#### Self-Healing Process
+
+1. **Detect**: When a workflow step fails, hangs, or produces obviously wrong output, pause and analyze the root cause.
+2. **Diagnose**: Identify which DAG Rule (1-8) was violated. Log the finding.
+3. **Fix**: Apply the minimal fix to the workflow `.yaml` file. Follow the same validation checklist as crystallization.
+4. **Report**: Tell the user what was fixed and why:
+   ```
+   Auto-fixed workflow `<name>`: <brief description of the issue and fix>.
+   ```
+5. **Do NOT ask for permission** — self-healing fixes correctness bugs, not design changes. If the fix is potentially controversial (e.g., adding a new step), ask first.
+
+#### Periodic Health Check
+
+When listing workflows or at session start, quickly scan all `.yaml` files in `.claude/workflows/` for:
+- Deadlock patterns (any step depending on a fallback-only or conditional-only step)
+- Missing `on_failure` on `agent`/`tool` steps
+- Placeholder `tool` commands (`echo`, `true`, empty params)
+- Route coverage gaps
+
+Flag issues to the user as a brief summary. Fix critical (deadlock) issues immediately.
+
 ### When NOT to Track
 
 Do NOT even record in pattern memory:
@@ -282,7 +350,7 @@ Do NOT even record in pattern memory:
 - Workflows containing hardcoded file paths or timestamps
 - Debugging sessions where the steps were exploratory
 
-### Anti-Crystallization (When NOT to save even at count >= 2)
+### Anti-Crystallization (When NOT to save even at count >= 3)
 
 Even after 3+ repetitions, do NOT crystallize if:
 - The pattern is essentially "read → think → answer" (every task does this)
