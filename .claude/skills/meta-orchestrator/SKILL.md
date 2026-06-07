@@ -122,6 +122,85 @@ params: {arg: value, ...}
 7. **Merge points after conditional routes** depend on the last common ancestor BEFORE the branch, not the branch targets. Branch targets chain forward via their own routes.
 8. **`on_failure` fallback steps** are dormant. They execute ONLY as error recovery. No other step may list them in `depends_on`. The fallback replaces its parent in the DAG flow on failure — dependents of the parent resolve against whichever executed (parent or fallback).
 
+#### Common Deadlock Patterns (LEARN FROM THESE)
+
+These are the actual mistakes that cause DAG deadlocks. **Before writing any `depends_on`, scan for these:**
+
+**Pattern A: Depending on a route-only branch target**
+```yaml
+# WRONG — `diagnose` depends on `incident_response`, but incident_response only
+# runs when classify_severity routes to "P0". P1/P2/P3 never reach it.
+- id: classify_severity
+  kind: classify
+  output_choices: [P0, P1, P2, P3]
+  route:
+    - when: P0
+      to: incident_response   # ← ONLY runs for P0
+    - when: P1
+      to: diagnose            # ← diagnose runs here for P1
+    - when: P2
+      to: diagnose
+    - when: P3
+      to: diagnose
+- id: diagnose
+  depends_on: [classify_severity, incident_response]  # ← DEADLOCK for P1/P2/P3
+```
+Fix: `diagnose` should only depend on `[classify_severity]`. Branch targets are NOT guaranteed.
+
+**Pattern B: Merging all route branches into one step**
+```yaml
+# WRONG — `synthesize` depends on security_review, quality_review, infra_review.
+# But classify_scope routes to only ONE of them. The other two never execute.
+- id: classify_scope
+  kind: classify
+  output_choices: [security, quality, infra]
+  route:
+    - when: security → security_review
+    - when: quality → quality_review
+    - when: infra → infra_review
+- id: security_review
+  kind: agent
+  ...
+- id: quality_review
+  kind: agent
+  ...
+- id: infra_review
+  kind: agent
+  ...
+- id: synthesize
+  depends_on: [security_review, quality_review, infra_review]  # ← DEADLOCK
+```
+Fix: remove the route and run all reviews in parallel, OR depend on `classify_scope` as the merge point.
+
+**Pattern C: Depending on a fallback step**
+```yaml
+# WRONG — `deploy_ready` depends on `build`, but also lists `build_failed`.
+# build_failed only runs when build FAILS. Normal path never executes it.
+- id: build
+  kind: tool
+  on_failure: build_failed
+- id: build_failed
+  kind: generate
+  ...
+- id: deploy_ready
+  depends_on: [build, build_failed]  # ← DEADLOCK: build_failed is dormant
+```
+Fix: `deploy_ready.depends_on: [build]`. Fallback replaces its parent — dependents resolve against whichever executed.
+
+**Pattern D: Route missing coverage for output_choices**
+```yaml
+# WRONG — `user_approve` has "changes_needed" choice but no route for it.
+# When user selects changes_needed, the DAG silently proceeds to implement_phase1.
+- id: user_approve
+  kind: input
+  output_choices: [approved, changes_needed]
+  route:
+    - when: approved
+      to: implement_phase1
+  # ← Missing: when changes_needed → ???
+```
+Fix: every `output_choices` value MUST have a corresponding `route.when` entry.
+
 ### Routing
 
 Steps can branch the DAG using route conditions:
