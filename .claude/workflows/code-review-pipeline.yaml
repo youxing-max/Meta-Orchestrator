@@ -29,6 +29,7 @@ composition:
         Review the target code for security vulnerabilities.
         Check: auth bypass, injection, hardcoded secrets, insecure crypto, CSRF, path traversal.
         Report CRITICAL/HIGH/MEDIUM/LOW findings.
+      on_failure: review_fallback
 
     - id: quality_review
       kind: agent
@@ -38,6 +39,7 @@ composition:
       prompt: |
         Review for code quality: naming, function length, file size, nesting,
         error handling, immutability, test coverage. Flag anti-patterns.
+      on_failure: review_fallback
 
     - id: infra_review
       kind: agent
@@ -47,8 +49,16 @@ composition:
       prompt: |
         Review infra/ops code for: idempotency, error recovery, secret management,
         resource cleanup, logging, monitoring gaps.
+      on_failure: review_fallback
 
-    # Phase 3: Synthesize (runs after all active branches complete)
+    - id: review_fallback
+      kind: generate
+      description: Fallback if any review step fails
+      prompt: |
+        One or more review steps (security/quality/infra) failed.
+        Produce a partial summary from whatever review results are available.
+
+    # Phase 2: Synthesize (runs after all active branches complete)
     - id: synthesize_report
       kind: generate
       description: Merge all review findings into one report

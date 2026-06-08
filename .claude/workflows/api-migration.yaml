@@ -23,6 +23,7 @@ composition:
       prompt: |
         Find every API endpoint: route, method, request/response shape,
         auth requirements, consumers. Build a complete inventory.
+      on_failure: apim_fallback
 
     - id: research_target
       kind: agent
@@ -32,6 +33,14 @@ composition:
       prompt: |
         Research the target platform/framework's API patterns: routing,
         middleware, error handling, auth. Find idiomatic examples.
+      on_failure: apim_fallback
+
+    - id: apim_fallback
+      kind: generate
+      description: Report audit/research failure
+      prompt: |
+        One or both of audit_endpoints / research_target failed to complete.
+        Report what was available and suggest manual inspection of the codebase.
 
     - id: analyze_breaking
       kind: generate
@@ -78,6 +87,13 @@ composition:
         Implement the first phase of migration. Add deprecation notices.
         Implement backward compatibility layer.
       depends_on: [user_approve]
+      on_failure: apim_impl_fallback
+
+    - id: apim_impl_fallback
+      kind: generate
+      description: Report implementation failure
+      prompt: |
+        Implementation failed. Report the error and suggest next steps.
 
     - id: test_migration
       kind: agent
@@ -88,6 +104,13 @@ composition:
         Test: new endpoints work, backward compat works,
         deprecation headers set, error responses correct format.
       depends_on: [implement_phase1]
+      on_failure: apim_test_fallback
+
+    - id: apim_test_fallback
+      kind: generate
+      description: Report test failure
+      prompt: |
+        Tests failed or could not run. Summarize available results and suggest manual verification.
 
     # Phase 4: Review + docs
     - id: review_migration
@@ -99,6 +122,13 @@ composition:
         Review: all breaking changes documented? backward compat correct?
         deprecation clear? error handling robust?
       depends_on: [implement_phase1, test_migration]
+      on_failure: apim_review_fallback
+
+    - id: apim_review_fallback
+      kind: generate
+      description: Report review failure
+      prompt: |
+        Code review could not complete. Summarize available implementation status.
 
     - id: migration_docs
       kind: generate

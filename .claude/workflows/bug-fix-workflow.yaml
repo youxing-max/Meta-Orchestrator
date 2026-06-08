@@ -44,8 +44,6 @@ composition:
         2. Can we rollback?
         3. Who needs immediate notification?
         4. Containment steps before fix
-      route:
-        - to: diagnose
 
     # Phase 2: Diagnose root cause
     - id: diagnose
@@ -57,6 +55,13 @@ composition:
         Investigate the bug: trace code path, identify root cause,
         determine trigger conditions. Be specific: file, line, logic error.
       depends_on: [classify_severity]
+      on_failure: bug_fallback
+
+    - id: bug_fallback
+      kind: generate
+      description: Report diagnostic failure
+      prompt: |
+        Bug diagnosis step failed. Report what was attempted and suggest manual investigation.
 
     - id: repro_steps
       kind: generate
@@ -76,6 +81,7 @@ composition:
         Implement the minimal fix for the root cause.
         No refactoring. Focus only on the bug.
       depends_on: [diagnose]
+      on_failure: bug_fallback
 
     - id: write_tests
       kind: agent
@@ -85,6 +91,13 @@ composition:
       prompt: |
         Write regression tests: must fail without fix, pass with fix.
       depends_on: [repro_steps]
+      on_failure: bug_test_fallback
+
+    - id: bug_test_fallback
+      kind: generate
+      description: Report test writing failure
+      prompt: |
+        Test writing failed. Summarize what tests were attempted and suggest manual test cases.
 
     # Phase 4: Verify and summarize
     - id: review_fix
@@ -95,6 +108,13 @@ composition:
       prompt: |
         Review the fix: minimal change? no side effects? follows patterns? tests adequate?
       depends_on: [implement_fix, write_tests]
+      on_failure: bug_review_fallback
+
+    - id: bug_review_fallback
+      kind: generate
+      description: Report review failure
+      prompt: |
+        Code review step failed. Summarize fix and test status from available results.
 
     - id: verify_edge_cases
       kind: generate
