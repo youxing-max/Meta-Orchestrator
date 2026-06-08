@@ -16,6 +16,8 @@ DAG-based workflow engine that brings OpenSquilla's MetaSkill execution model to
 - **Trivial** (single tool call, one-line answer, known file path) → execute directly
 - **Non-trivial** (multi-step, multi-file, requires planning, unclear scope) → **DECOMPOSE FIRST**
 
+**IMPORTANT — Loading guarantee:** The `always: true` frontmatter expresses intent but Claude Code does NOT auto-load skills. To ensure this skill is always in context, the project MUST include a `CLAUDE.md` that invokes `Skill("meta-orchestrator")` as its first instruction. Without this, the skill may be missed on continued/compacted sessions.
+
 ### Before Creating an Ad-Hoc DAG: Check Existing Workflows
 
 Read `.claude/workflows/` directory. If the user's intent matches any workflow's `triggers` or `description`, **execute the existing workflow** instead of creating an ad-hoc DAG. Existing workflows are already tested and optimized -- reuse them.
@@ -427,14 +429,15 @@ When executing an existing workflow, if it exhibits ANY of these symptoms, auto-
 
 #### Periodic Health Check
 
-When listing workflows or at session start, quickly scan all `.yaml` files in `.claude/workflows/` for:
-- Deadlock patterns (any step depending on a fallback-only or conditional-only step)
-- Missing `on_failure` on `agent`/`tool` steps
-- Placeholder `tool` commands (`echo`, `true`, empty params)
-- Platform-specific `tool: Bash` commands (`rm -rf`, `sed -i`, `/tmp/` paths)
-- Route coverage gaps
+**At session start or when listing workflows**, scan all `.yaml` files in `.claude/workflows/` for:
 
-Flag issues to the user as a brief summary. Fix critical (deadlock) issues immediately.
+| Issue | Severity | Action |
+|-------|----------|--------|
+| Missing `on_failure` on any `agent`/`tool` step | **CRITICAL** | **Auto-fix immediately** — add `on_failure` with a generate fallback. Do NOT ask for permission. |
+| Deadlock patterns (step depending on fallback-only or conditional-only step) | **CRITICAL** | **Auto-fix immediately** — remove unreachable dependencies |
+| Placeholder `tool` commands (`echo`, `true`, empty params) | HIGH | Replace with real command or cross-platform equivalent |
+| Platform-specific `tool: Bash` commands (`rm -rf`, `sed -i`, `/tmp/` paths) | MEDIUM | Replace with cross-platform equivalent |
+| Route coverage gaps | HIGH | Add missing route entries
 
 ### When NOT to Track
 

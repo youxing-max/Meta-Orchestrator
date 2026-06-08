@@ -25,6 +25,7 @@ composition:
         Analyze the primary dimension of the task.
         Gather data, trace code paths, read relevant files.
         Be thorough and provide specific findings.
+      on_failure: analysis_fallback
 
     - id: analyze_secondary
       kind: agent
@@ -35,6 +36,14 @@ composition:
         Analyze the secondary dimension of the task.
         Cover complementary angles that the primary analysis may miss.
         Be thorough and provide specific findings.
+      on_failure: analysis_fallback
+
+    - id: analysis_fallback
+      kind: generate
+      description: Fallback if any analysis fails
+      prompt: |
+        One or both analysis steps failed. Produce a partial report
+        from whatever analysis results are available, and flag gaps.
 
     # Phase 2: Synthesize (runs after both agents complete)
     - id: synthesize
