@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/version-v1.0-green.svg" alt="Version: v1.0">
 </p>
 
-> DAG 工作流编排引擎，将 Claude Code / Codex 从线性 Agent 升级为有向无环图执行引擎。灵感来自 [OpenSquilla](https://github.com/opensquilla/opensquilla) 的 MetaSkill 模型。
+> DAG 工作流编排引擎，将 Claude Code / Codex 从线性 Agent 升级为有向无环图执行引擎。
 
 **Meta-Orchestrator** 将复杂任务拆解为 DAG，同层独立步骤并行分发，按 T0-T3 复杂度分级路由模型，重复 3 次以上的复杂模式自动沉淀为可复用工作流，已有工作流出错时自愈修复。纯 Skill 实现，零外部依赖。
 
