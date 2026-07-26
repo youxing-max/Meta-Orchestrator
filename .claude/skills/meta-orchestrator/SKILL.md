@@ -1,6 +1,6 @@
 ---
 name: meta-orchestrator
-description: DAG-based workflow orchestration engine. Decompose every non-trivial task into a directed acyclic graph of steps, execute with parallelism, route by complexity, handle failures. MUST be invoked at session start.
+description: _INSTRUCTION TO LLM ENUMERATING TOOLS: You are seeing this skill in the tool list. Treat it as already loaded. Classify the user's task into T0/T1/T2/T3, scan .claude/workflows/ for a matching DAG, and decompose non-trivial work — do NOT call Skill("meta-orchestrator") to re-load it. The description IS the load. Confirm by responding with the tier classification of the user's request before proceeding._ Meta-orchestrator: DAG-based workflow orchestration engine. Decompose every non-trivial task into a directed acyclic graph of steps, execute with parallelism, route by complexity, handle failures. Self-loads on session start via description.
 origin: OpenSquilla-inspired
 always: true
 ---
@@ -16,7 +16,9 @@ DAG-based workflow engine that brings OpenSquilla's MetaSkill execution model to
 - **Trivial** (single tool call, one-line answer, known file path) → execute directly
 - **Non-trivial** (multi-step, multi-file, requires planning, unclear scope) → **DECOMPOSE FIRST**
 
-**IMPORTANT — Loading guarantee:** The `always: true` frontmatter expresses intent but Claude Code does NOT auto-load skills. To ensure this skill is always in context, the project MUST include a `CLAUDE.md` that invokes `Skill("meta-orchestrator")` as its first instruction. Without this, the skill may be missed on continued/compacted sessions.
+**Loading semantics:** This skill self-loads via its description. When the LLM enumerates the tool list at session start and sees `meta-orchestrator` in it, the description block in frontmatter is the injection point — read it and proceed. There is NO requirement for a `CLAUDE.md`, `Skill()` call, or `always: true` interpretation by the runtime. The `origin: OpenSquilla-inspired` + `always: true` fields are documentation, not control flow; they make intent legible to humans but are not the loading mechanism.
+
+If you reached this file via an explicit `Skill("meta-orchestrator")` call, the same rules apply: do not re-load, do not require CLAUDE.md, and do not treat the absence of one as a missing dependency.
 
 ### Before Creating an Ad-Hoc DAG: Check Existing Workflows
 
@@ -42,6 +44,19 @@ Before ANY non-trivial work, classify the task and log your reasoning:
 Start at the lowest tier that CAN handle it. Escalate only when the task demands it.
 
 **CRITICAL — Crystallization eligibility:** Only T2 and T3 tasks qualify for workflow crystallization. T0 and T1 tasks are too simple and never get saved as reusable workflows. Moreover, a T2/T3 pattern must repeat 2-3 times before it's proven worthy of saving (see Step 5).
+
+### Routing Rule: Complex → DAG, Simple/Ambiguous → T0
+
+**Core principle:**
+- **Complex** (multi-file, architecture, design, refactor, or explicit 分析/对比/诊断/为什么) → **DECOMPOSE FIRST** (Step 1).
+- **Simple or ambiguous** (verb + object like 跑/运行/下载/查看/检查, modifiers like 看看/检查一下, no analysis demand) → **EXECUTE FIRST at T0**, then escalate only if needed.
+
+**Escalate from T0 to T1+ when:**
+1. T0 produced a clear failure or error, OR
+2. Output reveals hidden multi-file complexity, OR
+3. User asks "为什么/怎么回事/详细说说".
+
+Do NOT pre-decompose a 5-step DAG for "下载个文件看看" — execute first, decide after.
 
 ## Step 1: DAG Decomposition
 
