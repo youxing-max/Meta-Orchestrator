@@ -1,6 +1,16 @@
 #!/bin/bash
 # Claude Code Stop hook. Outputs JSON reminder to LLM.
 # This is a NUDGE, not a script runner. The AI runs the actual scripts.
+#
+# Loop guard: if `stop_hook_active` is true in the input, this is a
+# re-entrant call (we already reminded and the LLM is responding to
+# the reminder). Exit silently to break the loop.
+INPUT=$(cat)
+if echo "$INPUT" | jq -e '.stop_hook_active == true' >/dev/null 2>&1; then
+  # Loop guard: don't keep reminding, it didn't fix itself.
+  exit 0
+fi
+
 exec jq -n '{
   hookSpecificOutput: {
     hookEventName: "Stop",
