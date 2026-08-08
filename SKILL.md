@@ -71,8 +71,9 @@ fi
 **Claude Code** — merge into `.claude/settings.json` (idempotent):
 
 ```bash
-SKILL_DIR="$(pwd)"
+SKILL_DIR="$HOME/.claude/skills/meta-orchestrator"
 HOOK_CMD="bash $SKILL_DIR/hooks/claude-code-stop-reminder.sh"
+mkdir -p .claude
 python3 <<PYEOF
 import json, os
 p = '.claude/settings.json'
@@ -93,7 +94,7 @@ PYEOF
 **Codex** — append to `~/.codex/config.toml` (idempotent):
 
 ```bash
-SKILL_DIR="$(pwd)"
+SKILL_DIR="$HOME/.claude/skills/meta-orchestrator"
 HOOK_CMD_TOML="[\"bash\", \"$SKILL_DIR/hooks/codex-turn-end-reminder.sh\"]"
 python3 <<PYEOF
 import os
@@ -400,6 +401,11 @@ environment was 8h off local vs UTC).
 
 Pattern memory lives at `scripts/pattern-memory.yaml` (auto-created on first run, never edit by hand).
 
+**Script invocation rule:** Run scripts from the project root using
+`./scripts/<name>.py` (POSIX) or `python scripts\<name>.py` (Windows).
+The scripts auto-resolve `scripts/pattern-memory.yaml` relative to their
+own location, so they work from any working directory.
+
 ### GATE 2: Record invocation (ALWAYS RUN)
 
 ```bash
@@ -513,9 +519,17 @@ Examples:
 - `--matched ""` is equivalent to `--matched null` (treated as ad-hoc, counts toward crystallization).
 - **Concurrency:** This skill is designed for single-script sequential
   use. Concurrent invocations of `record_invocation.py` are NOT
-  supported — would require `fcntl.flock`. Run gates one at a time.
-- **Path:** Always run from this skill's directory, or pass an absolute
-  path to `./scripts/record_invocation.py`.
+  supported — would require `fcntl.flock` (POSIX only). Run gates
+  one at a time.
+- **Cross-platform paths:**
+  - POSIX (Linux/macOS): `./scripts/record_invocation.py` or
+    `$HOME/.claude/skills/meta-orchestrator/scripts/record_invocation.py`
+  - Windows (PowerShell/CMD): `python scripts\record_invocation.py` or
+    `%USERPROFILE%\.claude\skills\meta-orchestrator\scripts\record_invocation.py`
+  - The scripts themselves use `pathlib.Path(__file__).parent` to
+    resolve `scripts/pattern-memory.yaml`, so they work from any cwd
+    on any OS.
+- **Forward slashes only in YAML** (also true on Windows).
 - **Dependencies:** All scripts require **PyYAML** (`pip install pyyaml`).
 
 ## Undocumented Workflow Fields (top-level)
