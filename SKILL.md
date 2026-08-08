@@ -71,7 +71,7 @@ fi
 **Claude Code** — merge into `.claude/settings.json` (idempotent):
 
 ```bash
-SKILL_DIR="$(cd .claude/skills/meta-orchestrator && pwd)"
+SKILL_DIR="$(pwd)"
 HOOK_CMD="bash $SKILL_DIR/hooks/claude-code-stop-reminder.sh"
 python3 <<PYEOF
 import json, os
@@ -93,7 +93,7 @@ PYEOF
 **Codex** — append to `~/.codex/config.toml` (idempotent):
 
 ```bash
-SKILL_DIR="$(cd .claude/skills/meta-orchestrator && pwd)"
+SKILL_DIR="$(pwd)"
 HOOK_CMD_TOML="[\"bash\", \"$SKILL_DIR/hooks/codex-turn-end-reminder.sh\"]"
 python3 <<PYEOF
 import os
@@ -138,32 +138,31 @@ inside this directory — do NOT look in `.claude/workflows/` or
 
 | What | Where | Who creates | Lifetime |
 |------|-------|-------------|----------|
-| **Workflows** (read) | `<skill_dir>/workflows/*.yaml` | human or AI write | permanent |
-| **Workflows** (write new) | `<skill_dir>/workflows/<name>.yaml` | you (the AI) on GATE 4 approval | permanent |
-| **Pattern memory** (count) | `<skill_dir>/scripts/pattern-memory.yaml` | `record_invocation.py` auto | permanent |
+| **Workflows** (read) | `./workflows/*.yaml` | human or AI write | permanent |
+| **Workflows** (write new) | `./workflows/<name>.yaml` | you (the AI) on GATE 4 approval | permanent |
+| **Pattern memory** (count) | `./scripts/pattern-memory.yaml` | `record_invocation.py` auto | permanent |
 | **Pattern memory** (touch) | NEVER hand-edit | scripts only | permanent |
 
-`<skill_dir>` = this skill's root directory. Resolve once at session start
-and reuse. For example: `/root/.claude/skills/meta-orchestrator` or
-`/home/user/project/.claude/skills/meta-orchestrator`.
+All paths are relative to the **project root**. This skill is now at
+the top level — no wrapper directory. Resolve once at session start
+and reuse.
 
 ### Action → path mapping
 
 | Action | Path to use |
 |--------|-------------|
-| List existing workflows | `ls <skill_dir>/workflows/*.yaml` |
-| Read a workflow | `Read <skill_dir>/workflows/<name>.yaml` |
-| Write a new workflow (after GATE 4 approval) | `Write <skill_dir>/workflows/<name>.yaml` |
-| Run a script | `python3 <skill_dir>/scripts/<name>.py` |
-| Inspect crystallization counts | `Read <skill_dir>/scripts/pattern-memory.yaml` |
+| List existing workflows | `ls ./workflows/*.yaml` |
+| Read a workflow | `Read ./workflows/<name>.yaml` |
+| Write a new workflow (after GATE 4 approval) | `Write ./workflows/<name>.yaml` |
+| Run a script | `python3 ./scripts/<name>.py` |
+| Inspect crystallization counts | `Read ./scripts/pattern-memory.yaml` |
 
 ### Forbidden paths
 
 Never write workflows or touch memory at these paths:
-- `~/.claude/workflows/` — does not exist
-- `.claude/workflows/` — does not exist (was deleted in commit b19a94a)
-- `.codex/workflows/` — this skill does not use it
-- Anywhere outside `<skill_dir>/` — defeats portability
+- `~/.claude/skills/meta-orchestrator/workflows/` — old wrapper location, deleted
+- `./workflows/` — ONLY use `./workflows/` (root level), not any nested copy
+- Anywhere outside the project root — defeats portability
 
 ## Session-Start Mandate
 
@@ -404,7 +403,7 @@ Pattern memory lives at `scripts/pattern-memory.yaml` (auto-created on first run
 ### GATE 2: Record invocation (ALWAYS RUN)
 
 ```bash
-python <skill_dir>/scripts/record_invocation.py \
+python ./scripts/record_invocation.py \
   --signature "<dag-shape>" \
   --family "<short-name>" \
   --matched "<workflow-name-or-null>"
@@ -421,7 +420,7 @@ The script prints JSON to stdout. Capture `pattern_id` from it for GATE 4.
 ### GATE 3: Threshold check
 
 ```bash
-python <skill_dir>/scripts/check_threshold.py
+python ./scripts/check_threshold.py
 ```
 
 - **Exit 0** → GATE 4 fires. Use the `pattern_id` from the JSON output.
@@ -432,7 +431,7 @@ python <skill_dir>/scripts/check_threshold.py
 ### GATE 4: Propose crystallization
 
 ```bash
-python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id>
+python ./scripts/propose_crystallize.py --pattern-id <id>
 ```
 
 The script moves the pattern to `pending_crystallization[]` and prints
@@ -441,7 +440,7 @@ a Chinese-language proposal. **It does not write the workflow file.**
 When the user approves (or `--yes` is passed), the new workflow lands at:
 
 ```
-<skill_dir>/workflows/<name>.yaml
+./workflows/<name>.yaml
 ```
 
 That's the **only** correct path. Read "Path Map" above — `.claude/workflows/`
@@ -451,7 +450,7 @@ For autonomous execution (no human present), pass `--yes` to auto-write
 a stub workflow file:
 
 ```bash
-python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id> --yes
+python ./scripts/propose_crystallize.py --pattern-id <id> --yes
 ```
 
 The stub is a starting template with a TODO prompt — edit it before
@@ -516,7 +515,7 @@ Examples:
   use. Concurrent invocations of `record_invocation.py` are NOT
   supported — would require `fcntl.flock`. Run gates one at a time.
 - **Path:** Always run from this skill's directory, or pass an absolute
-  path to `<skill_dir>/scripts/record_invocation.py`.
+  path to `./scripts/record_invocation.py`.
 - **Dependencies:** All scripts require **PyYAML** (`pip install pyyaml`).
 
 ## Undocumented Workflow Fields (top-level)
