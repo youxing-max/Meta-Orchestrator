@@ -9,6 +9,9 @@ triggers:
   - 并行分析
   - 分析并给出建议
   - multi-angle analysis
+  - 对比
+  - compare
+  - 平行分析
 meta_priority: 8
 always: false
 final_text_mode: auto

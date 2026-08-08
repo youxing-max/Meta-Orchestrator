@@ -186,7 +186,15 @@ the crystallization counter.
    - **Description keyword overlap** (≥2 keywords) → medium (weight 5)
    - **Single keyword overlap** → weak (weight 1)
    - **No overlap** → no match (weight 0)
-4. Pick the workflow with the highest score AND highest `meta_priority`
+4. **Tiebreaker rules** (apply in order):
+   1. Higher total score wins
+   2. Higher `meta_priority` wins
+   3. After tie, **Read the full `triggers:` list** of the tied workflows
+      and re-score against the user's request word-by-word. The workflow
+      whose trigger phrases semantically match the user's intent most
+      closely wins.
+   4. If still tied, fall through to Step 0.5 (composing ad-hoc is safer
+      than picking the wrong workflow).
 5. No match (all scores 0) → fall through to Step 0.5
 
 ## Step 0.5: Tier Classification

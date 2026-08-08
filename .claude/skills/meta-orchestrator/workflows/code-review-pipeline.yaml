@@ -13,6 +13,8 @@ triggers:
   - 安全审计
   - 代码审查
   - code review
+  - review my code
+  - review code
 meta_priority: 10
 always: false
 final_text_mode: auto
