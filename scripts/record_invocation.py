@@ -9,7 +9,7 @@ only newly-composed DAGs do.
 Requires: PyYAML (pip install pyyaml)
 
 Usage:
-  python scripts/record_invocation.py \
+  python3 scripts/record_invocation.py \
     --signature "<sig>" \
     --family "<short name>" \
     --matched "<workflow_name_or_null>"

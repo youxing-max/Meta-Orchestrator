@@ -11,7 +11,7 @@ the workflow file. The AI agent (you) is responsible for writing
 Requires: PyYAML (pip install pyyaml)
 
 Usage:
-  python scripts/propose_crystallize.py --pattern-id <id>
+  python3 scripts/propose_crystallize.py --pattern-id <id>
 """
 import argparse
 import json
@@ -55,6 +55,11 @@ def main():
         action="store_true",
         help="Auto-approve: write the crystallized workflow to workflows/<name>.yaml",
     )
+    parser.add_argument(
+        "--no",
+        action="store_true",
+        help="Decline the proposal: move pattern to archived_patterns (declined_count++).",
+    )
     args = parser.parse_args()
 
     if not MEMORY_FILE.exists():
@@ -89,6 +94,28 @@ def main():
         for c in ascii_family
     )[:32].strip("-") or "new-workflow"
     count = pattern.get("count", 0)
+
+    if args.no:
+        # Decline path: archive the pattern, increment declined_count.
+        # Reload to pick up the move we just did (pattern -> pending).
+        with open(MEMORY_FILE, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        data["pending_crystallization"] = [
+            p for p in data.get("pending_crystallization", [])
+            if str(p.get("id")) != target
+        ]
+        pattern["declined_count"] = pattern.get("declined_count", 0) + 1
+        pattern["declined_at"] = __import__("datetime").date.today().isoformat()
+        data.setdefault("archived_patterns", []).append(pattern)
+        save_memory(data)
+        print(json.dumps({
+            "declined": True,
+            "pattern_id": args.pattern_id,
+            "signature": sig,
+            "declined_count": pattern["declined_count"],
+            "archived": pattern["declined_count"] >= 2,
+        }, ensure_ascii=False))
+        return
 
     if args.yes:
         # Autonomous mode: write a stub workflow file directly.

@@ -1,18 +1,23 @@
 ---
 name: meta-orchestrator
 description: |
-  _INSTRUCTION TO LLM ENUMERATING TOOLS: You see this skill loaded.
-  Do NOT re-call Skill(). The description IS the load.
+  MANDATORY — DO NOT SKIP. This skill is ALWAYS ACTIVE on every
+  session. Failure to comply breaks the user's workflow library.
 
-  MANDATORY: For any non-trivial (T1+) task, FIRST list
-  `workflows/*.yaml` in this skill, Read each file's `triggers` and
-  `description`, and match the user's request. If a workflow matches,
-  execute it verbatim — do NOT invent a new DAG. Reusing existing
-  workflows is the entire purpose of this skill. Skipping this step
-  wastes the user's accumulated patterns.
+  On the FIRST turn of EVERY session, you MUST:
+  1. INSTALL hooks: write `<skill>/.claude/settings.json` with
+     `SessionStart` + `Stop` hooks pointing at this skill's
+     `hooks/session-start-reminder.sh` and
+     `hooks/claude-code-stop-reminder.sh`. See SKILL.md §Step -1.
+     Skip if already configured.
+  2. STEP 0: list `workflows/*.yaml`, Read each file's `triggers`
+     and `description`, match the user's request. If a workflow
+     matches, EXECUTE IT VERBATIM. Do NOT invent a new DAG.
+  3. Classify T0–T3.
+  4. After your response, RUN `scripts/record_invocation.py`.
 
-  Then classify T0–T3 and, after your response, run GATE 2
-  (record_invocation.py) so the crystallization counter can fire.
+  Skipping Step 0 = user loses accumulated workflows.
+  Skipping hook install = skill stops enforcing.
 
   Meta-orchestrator: DAG workflow engine. Reuse `workflows/`,
   decompose ad-hoc DAGs, crystallize via `scripts/`.
@@ -72,7 +77,6 @@ fi
 
 ```bash
 SKILL_DIR="$HOME/.claude/skills/meta-orchestrator"
-HOOK_CMD="bash $SKILL_DIR/hooks/claude-code-stop-reminder.sh"
 mkdir -p .claude
 python3 <<PYEOF
 import json, os
@@ -82,12 +86,24 @@ if os.path.exists(p):
     with open(p) as f:
         try: data = json.load(f)
         except: data = {}
-hooks = data.setdefault('hooks', {}).setdefault('Stop', [])
-if not any('stop-reminder' in str(h) for hook_list in hooks for h in hook_list.get('hooks', [])):
-    hooks.append({'hooks': [{'type': 'command', 'command': '$HOOK_CMD'}]})
+
+hooks_root = data.setdefault('hooks', {})
+
+# SessionStart hook
+ss = hooks_root.setdefault('SessionStart', [])
+ss_cmd = f'bash {os.environ["HOME"]}/.claude/skills/meta-orchestrator/hooks/session-start-reminder.sh'
+if not any('session-start-reminder' in str(h) for hook_list in ss for h in hook_list.get('hooks', [])):
+    ss.append({'hooks': [{'type': 'command', 'command': ss_cmd}]})
+
+# Stop hook
+st = hooks_root.setdefault('Stop', [])
+st_cmd = f'bash {os.environ["HOME"]}/.claude/skills/meta-orchestrator/hooks/claude-code-stop-reminder.sh'
+if not any('stop-reminder' in str(h) for hook_list in st for h in hook_list.get('hooks', [])):
+    st.append({'hooks': [{'type': 'command', 'command': st_cmd}]})
+
 with open(p, 'w') as f:
     json.dump(data, f, indent=2)
-print('✓ Claude Code hook configured')
+print('✓ Claude Code hooks configured (SessionStart + Stop)')
 PYEOF
 ```
 
@@ -126,6 +142,56 @@ After writing, tell the user:
 Only after hooks are verified configured, continue with Step 0 → Step 0.5 → Step 1 → execute → Step 5.
 
 If you skip Step -1, the skill silently degrades to plain documentation.
+
+### Hook Inventory
+
+Three hooks ship with this skill. Configure all three in `.claude/settings.json`:
+
+| Hook | File | When it fires |
+|------|------|---------------|
+| **SessionStart** | `hooks/session-start-reminder.sh` | Beginning of every session. Forces Step -1 → Step 0 → Step 0.5 before the LLM responds to the first task. |
+| **Stop** (Claude Code) | `hooks/claude-code-stop-reminder.sh` | After every response. Reminds the LLM to run GATE 2 → GATE 3 → GATE 4. |
+| **turn_end** (Codex) | `hooks/codex-turn-end-reminder.sh` | After every Codex turn. Writes a sentinel file the AI checks on next turn. |
+
+**Complete `.claude/settings.json`:**
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/skills/meta-orchestrator/hooks/session-start-reminder.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/skills/meta-orchestrator/hooks/claude-code-stop-reminder.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Complete `~/.codex/config.toml`:**
+
+```toml
+[hooks]
+turn_end = [
+  { command = ["bash", "~/.claude/skills/meta-orchestrator/hooks/codex-turn-end-reminder.sh"], timeout = 5000 }
+]
+```
+
+The Step -1 idempotent merge script above only configures the Stop hook. Add the SessionStart hook separately.
 
 ---
 
@@ -402,14 +468,14 @@ environment was 8h off local vs UTC).
 Pattern memory lives at `scripts/pattern-memory.yaml` (auto-created on first run, never edit by hand).
 
 **Script invocation rule:** Run scripts from the project root using
-`./scripts/<name>.py` (POSIX) or `python scripts\<name>.py` (Windows).
+`./scripts/<name>.py` (POSIX) or `python3 scripts\<name>.py` (Windows).
 The scripts auto-resolve `scripts/pattern-memory.yaml` relative to their
 own location, so they work from any working directory.
 
 ### GATE 2: Record invocation (ALWAYS RUN)
 
 ```bash
-python ./scripts/record_invocation.py \
+python3 ./scripts/record_invocation.py \
   --signature "<dag-shape>" \
   --family "<short-name>" \
   --matched "<workflow-name-or-null>"
@@ -426,7 +492,7 @@ The script prints JSON to stdout. Capture `pattern_id` from it for GATE 4.
 ### GATE 3: Threshold check
 
 ```bash
-python ./scripts/check_threshold.py
+python3 ./scripts/check_threshold.py
 ```
 
 - **Exit 0** → GATE 4 fires. Use the `pattern_id` from the JSON output.
@@ -437,7 +503,7 @@ python ./scripts/check_threshold.py
 ### GATE 4: Propose crystallization
 
 ```bash
-python ./scripts/propose_crystallize.py --pattern-id <id>
+python3 ./scripts/propose_crystallize.py --pattern-id <id>
 ```
 
 The script moves the pattern to `pending_crystallization[]` and prints
@@ -456,7 +522,7 @@ For autonomous execution (no human present), pass `--yes` to auto-write
 a stub workflow file:
 
 ```bash
-python ./scripts/propose_crystallize.py --pattern-id <id> --yes
+python3 ./scripts/propose_crystallize.py --pattern-id <id> --yes
 ```
 
 The stub is a starting template with a TODO prompt — edit it before
@@ -524,7 +590,7 @@ Examples:
 - **Cross-platform paths:**
   - POSIX (Linux/macOS): `./scripts/record_invocation.py` or
     `$HOME/.claude/skills/meta-orchestrator/scripts/record_invocation.py`
-  - Windows (PowerShell/CMD): `python scripts\record_invocation.py` or
+  - Windows (PowerShell/CMD): `python3 scripts\record_invocation.py` or
     `%USERPROFILE%\.claude\skills\meta-orchestrator\scripts\record_invocation.py`
   - The scripts themselves use `pathlib.Path(__file__).parent` to
     resolve `scripts/pattern-memory.yaml`, so they work from any cwd

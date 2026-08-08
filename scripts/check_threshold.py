@@ -6,7 +6,7 @@ exit 1 otherwise. Prints pending patterns as JSON to stdout.
 Requires: PyYAML (pip install pyyaml)
 
 Usage:
-  python scripts/check_threshold.py [--threshold N]
+  python3 scripts/check_threshold.py [--threshold N]
 """
 import argparse
 import json
