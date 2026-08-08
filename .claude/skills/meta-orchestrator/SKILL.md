@@ -124,22 +124,42 @@ If you skip Step -1, the skill silently degrades to plain documentation.
 
 ---
 
-## Path Map (READ FIRST)
+## Path Map (READ FIRST — ALL PATH INFO LIVES HERE)
 
 This skill is **self-contained and runtime-agnostic**. Everything lives
 inside this directory — do NOT look in `.claude/workflows/` or
 `.codex/workflows/`.
 
-| Resource | Path |
-|----------|------|
-| Workflows | `workflows/*.yaml` |
-| Scripts | `scripts/*.py` |
-| Pattern memory | `scripts/pattern-memory.yaml` (auto-generated) |
+### Three paths you must know
 
-**To find a workflow:** Read `workflows/*.yaml`. Pick by highest `meta_priority` match.
-**To write a new workflow:** Write to `workflows/<name>.yaml`.
-**To invoke a script:** Always run from this skill's directory. The exact
-invocation pattern is in **GATE 2/3/4** below — copy-paste as-is.
+| What | Where | Who creates | Lifetime |
+|------|-------|-------------|----------|
+| **Workflows** (read) | `<skill_dir>/workflows/*.yaml` | human or AI write | permanent |
+| **Workflows** (write new) | `<skill_dir>/workflows/<name>.yaml` | you (the AI) on GATE 4 approval | permanent |
+| **Pattern memory** (count) | `<skill_dir>/scripts/pattern-memory.yaml` | `record_invocation.py` auto | permanent |
+| **Pattern memory** (touch) | NEVER hand-edit | scripts only | permanent |
+
+`<skill_dir>` = this skill's root directory. Resolve once at session start
+and reuse. For example: `/root/.claude/skills/meta-orchestrator` or
+`/home/user/project/.claude/skills/meta-orchestrator`.
+
+### Action → path mapping
+
+| Action | Path to use |
+|--------|-------------|
+| List existing workflows | `ls <skill_dir>/workflows/*.yaml` |
+| Read a workflow | `Read <skill_dir>/workflows/<name>.yaml` |
+| Write a new workflow (after GATE 4 approval) | `Write <skill_dir>/workflows/<name>.yaml` |
+| Run a script | `python3 <skill_dir>/scripts/<name>.py` |
+| Inspect crystallization counts | `Read <skill_dir>/scripts/pattern-memory.yaml` |
+
+### Forbidden paths
+
+Never write workflows or touch memory at these paths:
+- `~/.claude/workflows/` — does not exist
+- `.claude/workflows/` — does not exist (was deleted in commit b19a94a)
+- `.codex/workflows/` — this skill does not use it
+- Anywhere outside `<skill_dir>/` — defeats portability
 
 ## Session-Start Mandate
 
@@ -399,8 +419,16 @@ python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id>
 ```
 
 The script moves the pattern to `pending_crystallization[]` and prints
-a Chinese-language proposal. By default, **it does not write the
-workflow file** — you (the AI) must do that after the user approves.
+a Chinese-language proposal. **It does not write the workflow file.**
+
+When the user approves (or `--yes` is passed), the new workflow lands at:
+
+```
+<skill_dir>/workflows/<name>.yaml
+```
+
+That's the **only** correct path. Read "Path Map" above — `.claude/workflows/`
+and `.codex/workflows/` do not exist for this skill.
 
 For autonomous execution (no human present), pass `--yes` to auto-write
 a stub workflow file:
@@ -410,7 +438,9 @@ python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id> --yes
 ```
 
 The stub is a starting template with a TODO prompt — edit it before
-the next Step 0 match wants to use it.
+the next Step 0 match wants to use it. The script refuses to overwrite
+an existing file (exit code 2) — pick a different name or delete the
+stub first.
 
 **User-explicit bypass:** "每次/以后/always/今后/记住/一直" → crystallize NOW (skip threshold). Write the workflow immediately.
 
