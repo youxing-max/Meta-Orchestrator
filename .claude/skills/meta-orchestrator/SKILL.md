@@ -16,6 +16,104 @@ description: |
 
 # Meta-Orchestrator
 
+## Step -1: Bootstrap Hooks (RUN FIRST, EVERY SESSION-START)
+
+⚠️ **THIS IS THE FIRST STEP. EXECUTE BEFORE ANYTHING ELSE.** Without the
+Stop hook configured, the crystallization gate never fires — patterns
+never accumulate — the skill becomes dead documentation. **No Step 0,
+no Step 1, no Step 5 until this is done.**
+
+### 1. Detect runtime
+
+```bash
+echo "CLAUDE_CODE: $([ -d .claude ] && echo yes || echo no)"
+echo "CODEX: $([ -d .codex ] && echo yes || echo no)"
+```
+
+### 2. Check if hooks are already configured
+
+**Claude Code** — `.claude/settings.json` must contain `stop-reminder`:
+
+```bash
+if [ -f .claude/settings.json ] && grep -q "stop-reminder" .claude/settings.json 2>/dev/null; then
+  echo "CLAUDE_HOOK=OK"
+else
+  echo "CLAUDE_HOOK=MISSING"
+fi
+```
+
+**Codex** — `~/.codex/config.toml` must contain `turn-end-reminder`:
+
+```bash
+if [ -f ~/.codex/config.toml ] && grep -q "turn-end-reminder" ~/.codex/config.toml 2>/dev/null; then
+  echo "CODEX_HOOK=OK"
+else
+  echo "CODEX_HOOK=MISSING"
+fi
+```
+
+### 3. Configure missing hooks
+
+**Claude Code** — merge into `.claude/settings.json` (idempotent):
+
+```bash
+SKILL_DIR="$(cd .claude/skills/meta-orchestrator && pwd)"
+HOOK_CMD="bash $SKILL_DIR/hooks/claude-code-stop-reminder.sh"
+python3 <<PYEOF
+import json, os
+p = '.claude/settings.json'
+data = {}
+if os.path.exists(p):
+    with open(p) as f:
+        try: data = json.load(f)
+        except: data = {}
+hooks = data.setdefault('hooks', {}).setdefault('Stop', [])
+if not any('stop-reminder' in str(h) for hook_list in hooks for h in hook_list.get('hooks', [])):
+    hooks.append({'hooks': [{'type': 'command', 'command': '$HOOK_CMD'}]})
+with open(p, 'w') as f:
+    json.dump(data, f, indent=2)
+print('✓ Claude Code hook configured')
+PYEOF
+```
+
+**Codex** — append to `~/.codex/config.toml` (idempotent):
+
+```bash
+SKILL_DIR="$(cd .claude/skills/meta-orchestrator && pwd)"
+HOOK_CMD_TOML="[\"bash\", \"$SKILL_DIR/hooks/codex-turn-end-reminder.sh\"]"
+python3 <<PYEOF
+import os
+p = os.path.expanduser('~/.codex/config.toml')
+os.makedirs(os.path.dirname(p), exist_ok=True)
+existing = open(p).read() if os.path.exists(p) else ''
+if 'turn-end-reminder' in existing:
+    print('Already configured')
+else:
+    with open(p, 'a') as f:
+        f.write('\n[hooks]\n')
+        f.write('turn_end = [\n')
+        f.write('  { command = $HOOK_CMD_TOML, timeout = 5000 }\n')
+        f.write(']\n')
+    print('✓ Codex hook configured')
+PYEOF
+```
+
+### 4. Confirm to user
+
+After writing, tell the user:
+
+> "✓ Crystallization Stop hook configured. After every response you'll
+> see a reminder asking you to run the gate scripts. This is what makes
+> the skill actually accumulate patterns over time."
+
+### 5. THEN proceed to Step 0
+
+Only after hooks are verified configured, continue with Step 0 → Step 0.5 → Step 1 → execute → Step 5.
+
+If you skip Step -1, the skill silently degrades to plain documentation.
+
+---
+
 ## Path Map (READ FIRST)
 
 This skill is **self-contained and runtime-agnostic**. Everything lives
