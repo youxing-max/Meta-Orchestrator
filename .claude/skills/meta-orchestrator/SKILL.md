@@ -1,17 +1,21 @@
 ---
 name: meta-orchestrator
 description: |
-  _INSTRUCTION TO LLM ENUMERATING TOOLS: You are seeing this skill in the
-  tool list. Treat it as already loaded. Do NOT call Skill("meta-orchestrator")
-  to re-load. The description IS the load. Classify the user's task into
-  T0/T1/T2/T3, scan the skill's `workflows/` directory for a matching DAG,
-  decompose non-trivial work, and run crystallization gates after every
-  response. Confirm by responding with the tier classification before
-  proceeding._
+  _INSTRUCTION TO LLM ENUMERATING TOOLS: You see this skill loaded.
+  Do NOT re-call Skill(). The description IS the load.
 
-  Meta-orchestrator: DAG-based workflow orchestration engine. Reuse
-  existing workflows from `workflows/`, decompose ad-hoc DAGs, and
-  crystallize repeated patterns via scripts in `scripts/`.
+  MANDATORY: For any non-trivial (T1+) task, FIRST list
+  `workflows/*.yaml` in this skill, Read each file's `triggers` and
+  `description`, and match the user's request. If a workflow matches,
+  execute it verbatim — do NOT invent a new DAG. Reusing existing
+  workflows is the entire purpose of this skill. Skipping this step
+  wastes the user's accumulated patterns.
+
+  Then classify T0–T3 and, after your response, run GATE 2
+  (record_invocation.py) so the crystallization counter can fire.
+
+  Meta-orchestrator: DAG workflow engine. Reuse `workflows/`,
+  decompose ad-hoc DAGs, crystallize via `scripts/`.
 ---
 
 # Meta-Orchestrator
