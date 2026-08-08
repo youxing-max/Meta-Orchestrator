@@ -23,6 +23,16 @@ Stop hook configured, the crystallization gate never fires — patterns
 never accumulate — the skill becomes dead documentation. **No Step 0,
 no Step 1, no Step 5 until this is done.**
 
+**Before any detection: cd to project root.** All paths below are
+relative to the repo root. Use:
+
+```bash
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+```
+
+If not in a git repo, fall back to `pwd`. Without this `cd`, detection
+silently fails.
+
 ### 1. Detect runtime
 
 ```bash
@@ -324,8 +334,33 @@ never increments = nothing ever crystallizes = skill is useless.
 | Script | Job | When it runs |
 |--------|-----|--------------|
 | `scripts/record_invocation.py` | Log one execution: append to `invocations[]`, increment `patterns[].count` if ad-hoc. Returns JSON with `pattern_id`. | **Every response (GATE 2)** |
-| `scripts/check_threshold.py` | Read `patterns[]`, print those with `count >= 2`. Exit 0 if any. | **Every response (GATE 3)** |
-| `scripts/propose_crystallize.py` | Move a pattern from `patterns[]` to `pending_crystallization[]`. Print Chinese-language proposal. | **Only when GATE 3 exits 0 (GATE 4)** |
+| `scripts/check_threshold.py` | Read `patterns[]`, print those with `count >= 2`. Exit 0 if any. Always emits JSON (one-line summary on exit 1). | **Every response (GATE 3)** |
+| `scripts/propose_crystallize.py` | Move a pattern from `patterns[]` to `pending_crystallization[]`. Print Chinese-language proposal. `--yes` flag: auto-write a stub workflow file. | **Only when GATE 3 exits 0 (GATE 4)** |
+
+### ID allocation (note for the LLM)
+
+`record_invocation.py` uses a **single global `next_id` counter** shared
+across `invocations[]` and `patterns[]`. Expect gaps in `invocations[].id`
+(2, 4, 5, ...) — those gaps are pattern IDs that went into `patterns[]`.
+This is intentional: it prevents collisions across the four arrays. When
+you need the pattern ID for GATE 4, **read it from the JSON output of
+`record_invocation.py`**, do not assume `id = N`.
+
+### Codex sentinel freshness
+
+`codex-turn-end-reminder.sh` writes `.codex-turn-end-trigger` with UTC
+ISO 8601. When checking freshness, **always compare in UTC**:
+
+```python
+from datetime import datetime, timezone, timedelta
+with open(".codex-turn-end-trigger") as f:
+    ts = f.read().strip()
+age = datetime.now(timezone.utc) - datetime.fromisoformat(ts.replace("Z", "+00:00"))
+fresh = age < timedelta(minutes=5)
+```
+
+Wall-clock comparisons will show spuriously large ages (the test
+environment was 8h off local vs UTC).
 
 Pattern memory lives at `scripts/pattern-memory.yaml` (auto-created on first run, never edit by hand).
 
@@ -352,8 +387,10 @@ The script prints JSON to stdout. Capture `pattern_id` from it for GATE 4.
 python <skill_dir>/scripts/check_threshold.py
 ```
 
-- Exit 0 → GATE 4 fires (use the `pattern_id` printed by the script).
-- Exit 1 → nothing to crystallize, done silently.
+- **Exit 0** → GATE 4 fires. Use the `pattern_id` from the JSON output.
+- **Exit 1** → nothing to crystallize, but the script still emits a
+  one-line JSON summary (`{"triggered": false, ...}`) so you can see
+  the current highest count.
 
 ### GATE 4: Propose crystallization
 
@@ -361,9 +398,19 @@ python <skill_dir>/scripts/check_threshold.py
 python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id>
 ```
 
-The script **only mutates pattern memory**. It does NOT write a workflow file.
+The script moves the pattern to `pending_crystallization[]` and prints
+a Chinese-language proposal. By default, **it does not write the
+workflow file** — you (the AI) must do that after the user approves.
 
-If the user approves the proposal, **you (the AI) write** the new workflow to `workflows/<name>.yaml` using the schema in Step 1.
+For autonomous execution (no human present), pass `--yes` to auto-write
+a stub workflow file:
+
+```bash
+python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id> --yes
+```
+
+The stub is a starting template with a TODO prompt — edit it before
+the next Step 0 match wants to use it.
 
 **User-explicit bypass:** "每次/以后/always/今后/记住/一直" → crystallize NOW (skip threshold). Write the workflow immediately.
 
