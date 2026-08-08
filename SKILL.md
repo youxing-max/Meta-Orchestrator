@@ -32,21 +32,16 @@ Stop hook configured, the crystallization gate never fires — patterns
 never accumulate — the skill becomes dead documentation. **No Step 0,
 no Step 1, no Step 5 until this is done.**
 
-**Before any detection: cd to project root.** All paths below are
-relative to the repo root. Use:
-
-```bash
-cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-```
-
-If not in a git repo, fall back to `pwd`. Without this `cd`, detection
-silently fails.
+**No `cd` needed.** Detection and configuration use absolute paths.
+The skill's location is `~/.claude/skills/meta-orchestrator` on
+Claude Code (substitute for your runtime). Scripts use `pathlib`
+internally, so they work from any cwd.
 
 ### 1. Detect runtime
 
 ```bash
-echo "CLAUDE_CODE: $([ -d .claude ] && echo yes || echo no)"
-echo "CODEX: $([ -d .codex ] && echo yes || echo no)"
+echo "CLAUDE_CODE: $([ -d ~/.claude ] && echo yes || echo no)"
+echo "CODEX: $([ -d ~/.codex ] && echo yes || echo no)"
 ```
 
 ### 2. Check if hooks are already configured
@@ -75,8 +70,12 @@ fi
 
 **Claude Code** — merge into `.claude/settings.json` (idempotent):
 
+> `SKILL_DIR` below is your skill's install path. The standard
+> location is `$HOME/.claude/skills/meta-orchestrator`. Set it to
+> wherever you actually installed the skill.
+
 ```bash
-SKILL_DIR="$HOME/.claude/skills/meta-orchestrator"
+SKILL_DIR="$HOME/.claude/skills/meta-orchestrator"   # adjust if installed elsewhere
 mkdir -p .claude
 python3 <<PYEOF
 import json, os
@@ -91,13 +90,13 @@ hooks_root = data.setdefault('hooks', {})
 
 # SessionStart hook
 ss = hooks_root.setdefault('SessionStart', [])
-ss_cmd = f'bash {os.environ["HOME"]}/.claude/skills/meta-orchestrator/hooks/session-start-reminder.sh'
+ss_cmd = f'bash {os.environ.get("SKILL_DIR", os.path.expanduser("~/.claude/skills/meta-orchestrator"))}/hooks/session-start-reminder.sh'
 if not any('session-start-reminder' in str(h) for hook_list in ss for h in hook_list.get('hooks', [])):
     ss.append({'hooks': [{'type': 'command', 'command': ss_cmd}]})
 
 # Stop hook
 st = hooks_root.setdefault('Stop', [])
-st_cmd = f'bash {os.environ["HOME"]}/.claude/skills/meta-orchestrator/hooks/claude-code-stop-reminder.sh'
+st_cmd = f'bash {os.environ.get("SKILL_DIR", os.path.expanduser("~/.claude/skills/meta-orchestrator"))}/hooks/claude-code-stop-reminder.sh'
 if not any('stop-reminder' in str(h) for hook_list in st for h in hook_list.get('hooks', [])):
     st.append({'hooks': [{'type': 'command', 'command': st_cmd}]})
 
@@ -110,7 +109,7 @@ PYEOF
 **Codex** — append to `~/.codex/config.toml` (idempotent):
 
 ```bash
-SKILL_DIR="$HOME/.claude/skills/meta-orchestrator"
+SKILL_DIR="${SKILL_DIR:-$HOME/.claude/skills/meta-orchestrator}"
 HOOK_CMD_TOML="[\"bash\", \"$SKILL_DIR/hooks/codex-turn-end-reminder.sh\"]"
 python3 <<PYEOF
 import os
@@ -163,7 +162,7 @@ Three hooks ship with this skill. Configure all three in `.claude/settings.json`
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/skills/meta-orchestrator/hooks/session-start-reminder.sh"
+            "command": "bash <SKILL_DIR>/hooks/session-start-reminder.sh"
           }
         ]
       }
@@ -173,7 +172,7 @@ Three hooks ship with this skill. Configure all three in `.claude/settings.json`
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/skills/meta-orchestrator/hooks/claude-code-stop-reminder.sh"
+            "command": "bash <SKILL_DIR>/hooks/claude-code-stop-reminder.sh"
           }
         ]
       }
@@ -187,9 +186,13 @@ Three hooks ship with this skill. Configure all three in `.claude/settings.json`
 ```toml
 [hooks]
 turn_end = [
-  { command = ["bash", "~/.claude/skills/meta-orchestrator/hooks/codex-turn-end-reminder.sh"], timeout = 5000 }
+  { command = ["bash", "<SKILL_DIR>/hooks/codex-turn-end-reminder.sh"], timeout = 5000 }
 ]
 ```
+
+`<SKILL_DIR>` = path to this skill, e.g. `~/.claude/skills/meta-orchestrator`.
+Substitute the actual path when writing config. The Step -1 idempotent
+merge script below does this automatically.
 
 The Step -1 idempotent merge script above only configures the Stop hook. Add the SessionStart hook separately.
 
@@ -197,39 +200,41 @@ The Step -1 idempotent merge script above only configures the Stop hook. Add the
 
 ## Path Map (READ FIRST — ALL PATH INFO LIVES HERE)
 
-This skill is **self-contained and runtime-agnostic**. Everything lives
-inside this directory — do NOT look in `.claude/workflows/` or
-`.codex/workflows/`.
+This skill is **self-contained and runtime-agnostic**. Paths use the
+placeholder `<SKILL_DIR>` — substitute the actual install path
+(e.g. `~/.claude/skills/meta-orchestrator`) when running.
 
 ### Three paths you must know
 
 | What | Where | Who creates | Lifetime |
 |------|-------|-------------|----------|
-| **Workflows** (read) | `./workflows/*.yaml` | human or AI write | permanent |
-| **Workflows** (write new) | `./workflows/<name>.yaml` | you (the AI) on GATE 4 approval | permanent |
-| **Pattern memory** (count) | `./scripts/pattern-memory.yaml` | `record_invocation.py` auto | permanent |
+| **Workflows** (read) | `<SKILL_DIR>/workflows/*.yaml` | human or AI write | permanent |
+| **Workflows** (write new) | `<SKILL_DIR>/workflows/<name>.yaml` | you (the AI) on GATE 4 approval | permanent |
+| **Pattern memory** (count) | `<SKILL_DIR>/scripts/pattern-memory.yaml` | `record_invocation.py` auto | permanent |
 | **Pattern memory** (touch) | NEVER hand-edit | scripts only | permanent |
 
-All paths are relative to the **project root**. This skill is now at
-the top level — no wrapper directory. Resolve once at session start
-and reuse.
+**Resolve `<SKILL_DIR>` once at session start.** On Claude Code the
+canonical install is `~/.claude/skills/meta-orchestrator`. On other
+runtimes (Codex, CI containers, etc.) substitute the path where the
+skill is installed. Scripts auto-resolve via `Path(__file__).parent`,
+so they work from any cwd on any OS.
 
 ### Action → path mapping
 
 | Action | Path to use |
 |--------|-------------|
-| List existing workflows | `ls ./workflows/*.yaml` |
-| Read a workflow | `Read ./workflows/<name>.yaml` |
-| Write a new workflow (after GATE 4 approval) | `Write ./workflows/<name>.yaml` |
-| Run a script | `python3 ./scripts/<name>.py` |
-| Inspect crystallization counts | `Read ./scripts/pattern-memory.yaml` |
+| List existing workflows | `ls <SKILL_DIR>/workflows/*.yaml` |
+| Read a workflow | `Read <SKILL_DIR>/workflows/<name>.yaml` |
+| Write a new workflow (after GATE 4 approval) | `Write <SKILL_DIR>/workflows/<name>.yaml` |
+| Run a script | `python3 <SKILL_DIR>/scripts/<name>.py` |
+| Inspect crystallization counts | `Read <SKILL_DIR>/scripts/pattern-memory.yaml` |
 
 ### Forbidden paths
 
 Never write workflows or touch memory at these paths:
-- `~/.claude/skills/meta-orchestrator/workflows/` — old wrapper location, deleted
-- `./workflows/` — ONLY use `./workflows/` (root level), not any nested copy
-- Anywhere outside the project root — defeats portability
+- `.claude/workflows/` — does not exist for this skill
+- `.codex/workflows/` — does not exist for this skill
+- Anywhere outside `<SKILL_DIR>/` — defeats portability
 
 ## Session-Start Mandate
 
@@ -465,17 +470,17 @@ fresh = age < timedelta(minutes=5)
 Wall-clock comparisons will show spuriously large ages (the test
 environment was 8h off local vs UTC).
 
-Pattern memory lives at `scripts/pattern-memory.yaml` (auto-created on first run, never edit by hand).
+Pattern memory lives at `<SKILL_DIR>/scripts/pattern-memory.yaml` (auto-created on first run, never edit by hand).
 
-**Script invocation rule:** Run scripts from the project root using
-`./scripts/<name>.py` (POSIX) or `python3 scripts\<name>.py` (Windows).
-The scripts auto-resolve `scripts/pattern-memory.yaml` relative to their
-own location, so they work from any working directory.
+**Script invocation rule:** Use `<SKILL_DIR>` (the absolute path to this skill).
+Scripts auto-resolve `scripts/pattern-memory.yaml` relative to their
+own location via `Path(__file__).parent`, so they work from any working
+directory on any OS. Don't `cd` first — just pass the absolute path.
 
 ### GATE 2: Record invocation (ALWAYS RUN)
 
 ```bash
-python3 ./scripts/record_invocation.py \
+python3 <SKILL_DIR>/scripts/record_invocation.py \
   --signature "<dag-shape>" \
   --family "<short-name>" \
   --matched "<workflow-name-or-null>"
@@ -492,7 +497,7 @@ The script prints JSON to stdout. Capture `pattern_id` from it for GATE 4.
 ### GATE 3: Threshold check
 
 ```bash
-python3 ./scripts/check_threshold.py
+python3 <SKILL_DIR>/scripts/check_threshold.py
 ```
 
 - **Exit 0** → GATE 4 fires. Use the `pattern_id` from the JSON output.
@@ -503,7 +508,7 @@ python3 ./scripts/check_threshold.py
 ### GATE 4: Propose crystallization
 
 ```bash
-python3 ./scripts/propose_crystallize.py --pattern-id <id>
+python3 <SKILL_DIR>/scripts/propose_crystallize.py --pattern-id <id>
 ```
 
 The script moves the pattern to `pending_crystallization[]` and prints
@@ -522,7 +527,7 @@ For autonomous execution (no human present), pass `--yes` to auto-write
 a stub workflow file:
 
 ```bash
-python3 ./scripts/propose_crystallize.py --pattern-id <id> --yes
+python3 <SKILL_DIR>/scripts/propose_crystallize.py --pattern-id <id> --yes
 ```
 
 The stub is a starting template with a TODO prompt — edit it before
@@ -588,10 +593,8 @@ Examples:
   supported — would require `fcntl.flock` (POSIX only). Run gates
   one at a time.
 - **Cross-platform paths:**
-  - POSIX (Linux/macOS): `./scripts/record_invocation.py` or
-    `$HOME/.claude/skills/meta-orchestrator/scripts/record_invocation.py`
-  - Windows (PowerShell/CMD): `python3 scripts\record_invocation.py` or
-    `%USERPROFILE%\.claude\skills\meta-orchestrator\scripts\record_invocation.py`
+  - POSIX (Linux/macOS): `python3 <SKILL_DIR>/scripts/<name>.py` where `<SKILL_DIR>` is e.g. `~/.claude/skills/meta-orchestrator`
+  - Windows (PowerShell/CMD): `python3 <SKILL_DIR>\scripts\<name>.py` where `<SKILL_DIR>` is e.g. `%USERPROFILE%\.claude\skills\meta-orchestrator`
   - The scripts themselves use `pathlib.Path(__file__).parent` to
     resolve `scripts/pattern-memory.yaml`, so they work from any cwd
     on any OS.
