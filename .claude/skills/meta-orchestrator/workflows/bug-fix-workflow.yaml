@@ -35,6 +35,7 @@ composition:
         - when: P3
           to: diagnose
 
+    # P0 path: incident response feeds into the same diagnose→fix→test→review pipeline.
     - id: incident_response
       kind: generate
       description: P0 critical incident protocol
@@ -44,6 +45,7 @@ composition:
         2. Can we rollback?
         3. Who needs immediate notification?
         4. Containment steps before fix
+      depends_on: [classify_severity]
 
     # Phase 2: Diagnose root cause
     - id: diagnose
@@ -54,7 +56,7 @@ composition:
       prompt: |
         Investigate the bug: trace code path, identify root cause,
         determine trigger conditions. Be specific: file, line, logic error.
-      depends_on: [classify_severity]
+      depends_on: [classify_severity, incident_response]
       on_failure: bug_fallback
 
     - id: bug_fallback

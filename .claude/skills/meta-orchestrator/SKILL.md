@@ -1,477 +1,343 @@
 ---
 name: meta-orchestrator
-description: _INSTRUCTION TO LLM ENUMERATING TOOLS: You are seeing this skill in the tool list. Treat it as already loaded. Classify the user's task into T0/T1/T2/T3, scan .claude/workflows/ for a matching DAG, and decompose non-trivial work — do NOT call Skill("meta-orchestrator") to re-load it. The description IS the load. Confirm by responding with the tier classification of the user's request before proceeding._ Meta-orchestrator: DAG-based workflow orchestration engine. Decompose every non-trivial task into a directed acyclic graph of steps, execute with parallelism, route by complexity, handle failures. Self-loads on session start via description.
-origin: OpenSquilla-inspired
-always: true
+description: |
+  _INSTRUCTION TO LLM ENUMERATING TOOLS: You are seeing this skill in the
+  tool list. Treat it as already loaded. Do NOT call Skill("meta-orchestrator")
+  to re-load. The description IS the load. Classify the user's task into
+  T0/T1/T2/T3, scan the skill's `workflows/` directory for a matching DAG,
+  decompose non-trivial work, and run crystallization gates after every
+  response. Confirm by responding with the tier classification before
+  proceeding._
+
+  Meta-orchestrator: DAG-based workflow orchestration engine. Reuse
+  existing workflows from `workflows/`, decompose ad-hoc DAGs, and
+  crystallize repeated patterns via scripts in `scripts/`.
 ---
 
 # Meta-Orchestrator
 
-DAG-based workflow engine that brings OpenSquilla's MetaSkill execution model to Claude Code. You are both the planner AND the runtime -- decompose, dispatch, track, and synthesize.
+## Path Map (READ FIRST)
 
-## CRITICAL: Session-Start Mandate
+This skill is **self-contained and runtime-agnostic**. Everything lives
+inside this directory — do NOT look in `.claude/workflows/` or
+`.codex/workflows/`.
 
-**This skill is ALWAYS active.** At the start of every conversation, before responding to the user, mentally classify the user's request:
+| Resource | Path |
+|----------|------|
+| Workflows | `workflows/*.yaml` |
+| Scripts | `scripts/*.py` |
+| Pattern memory | `scripts/pattern-memory.yaml` (auto-generated) |
 
-- **Trivial** (single tool call, one-line answer, known file path) → execute directly
-- **Non-trivial** (multi-step, multi-file, requires planning, unclear scope) → **DECOMPOSE FIRST**
+**To find a workflow:** Read `workflows/*.yaml`. Pick by highest `meta_priority` match.
+**To write a new workflow:** Write to `workflows/<name>.yaml`.
+**To invoke a script:** Always run from this skill's directory. The exact
+invocation pattern is in **GATE 2/3/4** below — copy-paste as-is.
 
-**Loading semantics:** This skill self-loads via its description. When the LLM enumerates the tool list at session start and sees `meta-orchestrator` in it, the description block in frontmatter is the injection point — read it and proceed. There is NO requirement for a `CLAUDE.md`, `Skill()` call, or `always: true` interpretation by the runtime. The `origin: OpenSquilla-inspired` + `always: true` fields are documentation, not control flow; they make intent legible to humans but are not the loading mechanism.
+## Session-Start Mandate
 
-If you reached this file via an explicit `Skill("meta-orchestrator")` call, the same rules apply: do not re-load, do not require CLAUDE.md, and do not treat the absence of one as a missing dependency.
+⚠️ **THIS SKILL IS ALWAYS ACTIVE.** At the start of EVERY conversation,
+before responding to the user, you MUST:
 
-### Before Creating an Ad-Hoc DAG: Check Existing Workflows
+1. **Step 0** — list `workflows/*.yaml`, match `triggers` + `description`
+2. **Step 0.5** — assign T0–T3 (NEVER skip — every task gets a tier)
+3. **After EVERY response** — run GATE 2 (record invocation). NO exceptions.
 
-Read `.claude/workflows/` directory. If the user's intent matches any workflow's `triggers` or `description`, **execute the existing workflow** instead of creating an ad-hoc DAG. Existing workflows are already tested and optimized -- reuse them.
+## Step 0: Workflow Reuse Gate (MANDATORY)
 
-Match logic:
-1. List all `.yaml` files in `.claude/workflows/`
-2. Compare user's request against each workflow's `triggers` and `description`
-3. Pick the best match by `meta_priority` (higher = more specific)
-4. Execute the matched workflow's DAG steps
+⚠️ **THIS GATE RUNS FIRST.** Skipping = reinventing wheels AND starving
+the crystallization counter.
 
-## Step 0: Complexity Classification (Tiers)
+1. List `workflows/*.yaml`
+2. For each, read `triggers:` and `description:`
+3. Score match using this rubric:
+   - **Exact trigger phrase match** → strong (weight 10)
+   - **Description keyword overlap** (≥2 keywords) → medium (weight 5)
+   - **Single keyword overlap** → weak (weight 1)
+   - **No overlap** → no match (weight 0)
+4. Pick the workflow with the highest score AND highest `meta_priority`
+5. No match (all scores 0) → fall through to Step 0.5
 
-Before ANY non-trivial work, classify the task and log your reasoning:
+## Step 0.5: Tier Classification
 
-| Tier | Complexity | Model | When |
-|------|-----------|-------|------|
-| **T0** | Lookup, read, explain | haiku | Grep, Read, single-file answers |
-| **T1** | Simple edit, fix | haiku → escalate if needed | Single-file edits, well-scoped bugs |
-| **T2** | Feature, multi-file, refactor | sonnet | Most development work |
-| **T3** | Architecture, novel design, deep reasoning | opus | System design, complex debugging |
+| Tier | Scope | Action |
+|------|-------|--------|
+| T0 | lookup, single-file | Execute directly |
+| T1 | single-file edit | Execute directly |
+| T2 | multi-file, refactor | Decompose into DAG |
+| T3 | architecture, design | Decompose into DAG |
 
-Start at the lowest tier that CAN handle it. Escalate only when the task demands it.
+## Step 1: DAG Decomposition (T2+)
 
-**CRITICAL — Crystallization eligibility:** Only T2 and T3 tasks qualify for workflow crystallization. T0 and T1 tasks are too simple and never get saved as reusable workflows. Moreover, a T2/T3 pattern must repeat 2-3 times before it's proven worthy of saving (see Step 5).
+Refer to existing `workflows/*.yaml` for canonical shapes. Or write from
+the schema below — both paths produce valid DAGs.
 
-### Routing Rule: Complex → DAG, Simple/Ambiguous → T0
-
-**Core principle:**
-- **Complex** (multi-file, architecture, design, refactor, or explicit 分析/对比/诊断/为什么) → **DECOMPOSE FIRST** (Step 1).
-- **Simple or ambiguous** (verb + object like 跑/运行/下载/查看/检查, modifiers like 看看/检查一下, no analysis demand) → **EXECUTE FIRST at T0**, then escalate only if needed.
-
-**Escalate from T0 to T1+ when:**
-1. T0 produced a clear failure or error, OR
-2. Output reveals hidden multi-file complexity, OR
-3. User asks "为什么/怎么回事/详细说说".
-
-Do NOT pre-decompose a 5-step DAG for "下载个文件看看" — execute first, decide after.
-
-## Step 1: DAG Decomposition
-
-For non-trivial tasks, emit a DAG plan BEFORE executing. The DAG is a set of steps connected by `depends_on` edges:
+### DAG Schema (self-contained)
 
 ```yaml
-# Internal mental model -- emit this as a plan to the user
-dag:
+name: <kebab-case-name>
+description: "<one-line purpose>"
+triggers:
+  - <phrase users would say>
+meta_priority: 10                 # higher = more specific match
+composition:
   steps:
-    - id: <unique_id>
-      kind: classify | agent | generate | skill | input | tool
-      description: <one-line purpose>
-      depends_on: [<step_id>, ...]  # empty = runs immediately
-      # kind-specific fields below
+    - id: <unique_snake_id>
+      description: <one-line purpose>          # recommended, helps readability
+      kind: agent | generate | classify | input | tool
+      prompt: <task description>                # required for agent/generate/classify/input
+      agent_type: <type>                        # required if kind=agent
+      model: haiku | sonnet | opus              # optional, default=sonnet
+      depends_on: [<step_id>, ...]              # empty list = no deps
+      on_failure: <fallback_step_id>            # recommended for risky steps
+
+    # kind=classify also needs:
+      output_choices: [<value1>, <value2>, ...]
+      route:
+        - when: <value1>
+          to: <step_id>
+
+    # kind=input also needs:
+      schema: <json schema string>
+      route:
+        - when: <choice>
+          to: <step_id>
 ```
 
-### Step Kinds
+### Step Kinds (full list)
 
-**`classify`** -- Route based on one classification decision.
-```
-prompt: <what to decide>
-output_choices: [A, B, C]
-```
-RESULT: exactly one choice. Use this to BRANCH the DAG.
+- **agent**: dispatches a subagent. Specify `agent_type` + `model`.
+- **generate**: LLM generates text inline. No subagent.
+- **classify**: routes by classification. Needs `output_choices` + `route`.
+- **input**: prompts the user for input. Needs `schema` (JSON schema string) + `route`.
+- **tool**: runs a bash/python command. Specify `tool:` + `params:`.
 
-**`agent`** -- Dispatch a sub-agent for reasoning or implementation.
-```
-agent_type: explore | plan | code-review | tdd | security | ...
-prompt: <self-contained task description>
-model: haiku | sonnet | opus  # default: sonnet
-```
+### Agent Types (use what's appropriate for the task)
 
-**`generate`** -- Pure LLM generation, no tool loop. For summaries, drafts, audits.
-```
-prompt: <what to produce>
-```
+| Agent type | Use for |
+|-----------|---------|
+| `Explore` | Read-only search, locate code, scan files |
+| `general-purpose` | Multi-step tasks, code generation |
+| `code-reviewer` | Code quality, style, best practices |
+| `security-reviewer` | Vulnerability scan, auth issues |
+| `tdd-guide` | Test-driven development, regression tests |
 
-**`skill`** -- Invoke a named skill.
-```
-skill_name: <name from available skills>
-args: <optional arguments>
-```
+Any agent_type available in your runtime may be used — this list is
+non-exhaustive.
 
-**`input`** -- Pause and collect structured input from user.
-```
-prompt: <what to ask>
-schema: {field: type, ...}
-```
-Supports `route` to branch on user response, same syntax as `classify`:
+### Routing (kind=classify or kind=input)
+
 ```yaml
-- id: user_approve
-  kind: input
-  prompt: "Approve the plan?"
-  schema:
-    decision: {type: enum, choices: [approved, changes_needed]}
-  route:
-    - when: approved
-      to: next_step
-    - when: changes_needed
-      to: revise_plan
-```
-
-**`tool`** -- Deterministic tool call (Bash, Read, Write, MCP tools, etc.)
-```
-# Direct tool call
-tool: Bash | Read | Write | ...
-params: {arg: value, ...}
-
-# MCP tool call (mcp__<server>__<tool>)
-tool: mcp__headroom__headroom_compress
-params: {content: "...", ...}
-```
-MCP tools follow the `mcp__<server>__<tool>` convention. Any tool available in the current session can be used.
-
-**Cross-platform tool commands:** When `tool: Bash` is used in a workflow, the command MUST work on Linux, macOS, and Windows. Prefer:
-- `python -c "..."` or `node -e "..."` — works everywhere
-- `git` commands — identical on all platforms
-- `npx` / `pip` / `cargo` — package managers are cross-platform
-- Avoid: `rm -rf`, `sed -i`, `/tmp/` paths, shell-specific syntax
-- If a platform-specific command is unavoidable, prefer `python` as the runner
-
-### DAG Rules (ENFORCED)
-
-1. Steps with **no** `depends_on` or empty `depends_on` → run **immediately in parallel**
-2. Steps with `depends_on` → wait for ALL named predecessors to complete
-3. Independent steps at the same depth → **MUST run in parallel** (single Agent call with multiple agents)
-4. The graph must be **acyclic** -- no circular dependencies
-5. Each step ID must be unique within the DAG
-6. **depends_on must ONLY reference steps GUARANTEED to execute.** Do NOT depend on:
-   - Steps reachable only via `classify` route branches (conditional execution)
-   - Steps declared as `on_failure` fallback targets (dormant until error)
-   Before writing a dependency, ask: "does this predecessor ALWAYS run?"
-7. **Merge points after conditional routes** depend on the last common ancestor BEFORE the branch, not the branch targets. Branch targets chain forward via their own routes.
-8. **`on_failure` fallback steps** are dormant. They execute ONLY as error recovery. No other step may list them in `depends_on`. The fallback replaces its parent in the DAG flow on failure — dependents of the parent resolve against whichever executed (parent or fallback).
-
-#### Common Deadlock Patterns (LEARN FROM THESE)
-
-These are the actual mistakes that cause DAG deadlocks. **Before writing any `depends_on`, scan for these:**
-
-**Pattern A: Depending on a route-only branch target**
-```yaml
-# WRONG — `diagnose` depends on `incident_response`, but incident_response only
-# runs when classify_severity routes to "P0". P1/P2/P3 never reach it.
 - id: classify_severity
   kind: classify
-  output_choices: [P0, P1, P2, P3]
+  prompt: "Classify: low | medium | high"
+  output_choices: [low, medium, high]
   route:
-    - when: P0
-      to: incident_response   # ← ONLY runs for P0
-    - when: P1
-      to: diagnose            # ← diagnose runs here for P1
-    - when: P2
-      to: diagnose
-    - when: P3
-      to: diagnose
-- id: diagnose
-  depends_on: [classify_severity, incident_response]  # ← DEADLOCK for P1/P2/P3
+    - when: low
+      to: handle_low
+    - when: medium
+      to: handle_medium
+    - when: high
+      to: handle_high
 ```
-Fix: `diagnose` should only depend on `[classify_severity]`. Branch targets are NOT guaranteed.
 
-**Pattern B: Merging all route branches into one step**
-```yaml
-# WRONG — `synthesize` depends on security_review, quality_review, infra_review.
-# But classify_scope routes to only ONE of them. The other two never execute.
-- id: classify_scope
-  kind: classify
-  output_choices: [security, quality, infra]
-  route:
-    - when: security → security_review
-    - when: quality → quality_review
-    - when: infra → infra_review
-- id: security_review
-  kind: agent
-  ...
-- id: quality_review
-  kind: agent
-  ...
-- id: infra_review
-  kind: agent
-  ...
-- id: synthesize
-  depends_on: [security_review, quality_review, infra_review]  # ← DEADLOCK
-```
-Fix: remove the route and run all reviews in parallel, OR depend on `classify_scope` as the merge point.
+### Fallback Pattern
 
-**Pattern C: Depending on a fallback step**
-```yaml
-# WRONG — `deploy_ready` depends on `build`, but also lists `build_failed`.
-# build_failed only runs when build FAILS. Normal path never executes it.
-- id: build
-  kind: tool
-  on_failure: build_failed
-- id: build_failed
-  kind: generate
-  ...
-- id: deploy_ready
-  depends_on: [build, build_failed]  # ← DEADLOCK: build_failed is dormant
-```
-Fix: `deploy_ready.depends_on: [build]`. Fallback replaces its parent — dependents resolve against whichever executed.
+Every risky step should have `on_failure` pointing to a `generate` step:
 
-**Pattern D: Route missing coverage for output_choices**
-```yaml
-# WRONG — `user_approve` has "changes_needed" choice but no route for it.
-# When user selects changes_needed, the DAG silently proceeds to implement_phase1.
-- id: user_approve
-  kind: input
-  output_choices: [approved, changes_needed]
-  route:
-    - when: approved
-      to: implement_phase1
-  # ← Missing: when changes_needed → ???
-```
-Fix: every `output_choices` value MUST have a corresponding `route.when` entry.
-
-### Routing
-
-Steps can branch the DAG using route conditions:
-```yaml
-- id: classify_task
-  kind: classify
-  prompt: "Is this a bug fix, feature, or refactor?"
-  output_choices: [bug, feature, refactor]
-  route:
-    - when: bug
-      to: fix_bug
-    - when: feature
-      to: implement_feature
-    - when: refactor
-      to: refactor_code
-```
-Only the routed-to branch executes. Others are skipped.
-
-### Failure Handling
-
-Any step can declare a fallback:
 ```yaml
 - id: risky_step
   kind: agent
-  on_failure: fallback_step_id
-```
-If the step fails (agent returns error, tool fails), execute `fallback_step_id` instead.
+  prompt: <task>
+  on_failure: risky_step_fallback
 
-CRITICAL: Fallback steps must NOT have `depends_on` in the normal DAG flow. They are ONLY executed as error recovery when their parent step fails. Do NOT schedule them in parallel with other steps. They are dormant until triggered by failure.
-
-## Step 2: Parallel Dispatch
-
-When multiple steps are ready (all `depends_on` satisfied), dispatch them in **one call** with multiple Agent invocations:
-
-```
-# Parallel dispatch -- single message, multiple Agent calls
-Agent(description="Research auth patterns", subagent_type="Explore", prompt="...")
-Agent(description="Review existing code", subagent_type="code-reviewer", prompt="...")
-Agent(description="Check security", subagent_type="security-reviewer", prompt="...")
+- id: risky_step_fallback
+  kind: generate
+  prompt: "Risky step failed. Report what was attempted and suggest manual investigation."
 ```
 
-**Never** run independent steps sequentially. This is the biggest efficiency loss.
+### DAG Rules (MUST FOLLOW)
 
-## Step 3: Track Execution
+⚠️ **VIOLATING ANY RULE BREAKS THE WORKFLOW.**
 
-Use TaskCreate for each DAG step:
-- Create task when step starts
-- Mark `in_progress` when dispatching
-- Mark `completed` when result arrives
-- Mark with failure note if step fails
+1. **No deadlock** — every `depends_on` target always executes
+2. **Route completeness** — every `output_choices` value has matching `route.when`
+3. **Fallback isolation** — `on_failure` targets never appear in another `depends_on`
+4. **Acyclicity** — no circular dependencies
+5. **One-level references** — don't nest SKILL.md → a.md → b.md
 
-This gives the user visibility into what's running, what's done, and what failed.
+### Minimal Valid Workflow
 
-## Step 4: Synthesize Output
+This is the **smallest** correct workflow. Copy this template, rename, fill in:
 
-After all steps complete, synthesize the final answer. Three modes:
+```yaml
+name: <workflow-name>            # kebab-case
+description: "<one line>"        # what it does
+triggers:                        # 2-3 phrases users say
+  - <phrase>
+meta_priority: 10                # 1-20, higher = more specific
+kind: meta
+always: false
+final_text_mode: auto
+composition:
+  steps:
+    - id: step_one
+      kind: agent                # agent | generate | classify | input | tool
+      agent_type: general-purpose  # required for kind=agent
+      prompt: <what to do>
+      depends_on: []             # other step ids, or []
+      on_failure: step_one_fb    # optional but recommended
 
-| Mode | Behavior |
+    - id: step_one_fb            # fallback step (kind=generate)
+      kind: generate
+      prompt: "step_one failed. Report what was attempted."
+      depends_on: []
+
+    - id: step_two
+      kind: generate
+      prompt: <next step>
+      depends_on: [step_one]     # runs after step_one
+```
+
+**Required fields per kind:**
+
+| kind | required |
 |------|----------|
-| **auto** (default) | Synthesize a concise answer from all step outputs. Cross-reference, resolve conflicts, highlight key decisions. |
-| **raw** | Return the last non-fallback step's output verbatim. |
-| **step:<id>** | Return that specific step's output verbatim. |
+| `agent` | `id`, `kind`, `prompt`, `agent_type` |
+| `generate` | `id`, `kind`, `prompt` |
+| `classify` | `id`, `kind`, `prompt`, `output_choices`, `route` |
+| `input` | `id`, `kind`, `prompt`, `schema`, `route` |
+| `tool` | `id`, `kind`, `tool`, `params` |
 
-Default to `auto`. The final synthesis should:
-- Answer the user's original question/request
-- Reference which steps contributed what
-- Flag any unresolved issues or open decisions
-- Be concise -- the user can inspect individual step outputs if needed
+**Common mistakes to avoid:**
 
-## Model Selection by Step
+- ❌ `depends_on: [step_one_fb]` — fallback steps never run unless their parent fails. They MUST NOT be in any `depends_on`.
+- ❌ `kind: classify` with `output_choices: [a, b]` but `route` only covers `a` — every choice needs a route.
+- ❌ Two steps depending on each other — creates a cycle, the DAG never resolves.
+- ❌ `depends_on: []` (omitted) — always write it explicitly, even if empty.
+- ❌ Step `id` containing spaces or hyphens — use snake_case: `scan_files`, not `Scan-Files`.
 
-Each `agent` step should pick the cheapest capable model:
+## Step 5: Crystallization Gate (MANDATORY, every response)
 
-| Step Complexity | Model | Example |
-|----------------|-------|---------|
-| Read/search/locate | haiku | "Find where auth logic is defined" |
-| Code generation, fix | sonnet | "Implement the OAuth flow" |
-| Architecture, novel design | opus | "Design the multi-tenant isolation strategy" |
+⚠️ **THIS GATE RUNS AFTER EVERY RESPONSE.** Skipping = pattern counter
+never increments = nothing ever crystallizes = skill is useless.
 
-## Execution Checklist (BEFORE starting work)
+### What Each Script Does
 
-For any non-trivial task:
-- [ ] Checked `.claude/workflows/` for matching existing workflow
-- [ ] Classified into T0-T3 tier
-- [ ] If no matching workflow: decomposed into DAG steps with IDs and depends_on
-- [ ] Identified parallelism (same-depth steps without dependencies)
-- [ ] Assigned model per step
-- [ ] Declared failure fallbacks for risky steps
-- [ ] Chosen final synthesis mode
+| Script | Job | When it runs |
+|--------|-----|--------------|
+| `scripts/record_invocation.py` | Log one execution: append to `invocations[]`, increment `patterns[].count` if ad-hoc. Returns JSON with `pattern_id`. | **Every response (GATE 2)** |
+| `scripts/check_threshold.py` | Read `patterns[]`, print those with `count >= 2`. Exit 0 if any. | **Every response (GATE 3)** |
+| `scripts/propose_crystallize.py` | Move a pattern from `patterns[]` to `pending_crystallization[]`. Print Chinese-language proposal. | **Only when GATE 3 exits 0 (GATE 4)** |
 
-## Execution Checklist (AFTER completing work)
+Pattern memory lives at `scripts/pattern-memory.yaml` (auto-created on first run, never edit by hand).
 
-- [ ] All steps completed or failed gracefully
-- [ ] Final synthesis delivered to user
-- [ ] **Workflow executed with issues?** → Flag for self-healing (see Step 5, "Workflow Self-Healing")
-- [ ] T2+ task with novel DAG? → Record pattern signature in `.claude/.pattern-memory.yaml`
-- [ ] Pattern count >= 3 (3rd occurrence)? → Propose crystallization
-- [ ] User said "每次/以后/记住"? → Crystallize immediately without asking
+### GATE 2: Record invocation (ALWAYS RUN)
+
+```bash
+python <skill_dir>/scripts/record_invocation.py \
+  --signature "<dag-shape>" \
+  --family "<short-name>" \
+  --matched "<workflow-name-or-null>"
+```
+
+| Argument | Meaning |
+|----------|---------|
+| `--signature` | DAG shape string (see Signature Computation below). |
+| `--family` | Short slug for this DAG pattern, e.g. `code-review`. |
+| `--matched` | The workflow name if Step 0 hit; literal `null` if you composed ad-hoc. **Only ad-hoc counts toward crystallization.** |
+
+The script prints JSON to stdout. Capture `pattern_id` from it for GATE 4.
+
+### GATE 3: Threshold check
+
+```bash
+python <skill_dir>/scripts/check_threshold.py
+```
+
+- Exit 0 → GATE 4 fires (use the `pattern_id` printed by the script).
+- Exit 1 → nothing to crystallize, done silently.
+
+### GATE 4: Propose crystallization
+
+```bash
+python <skill_dir>/scripts/propose_crystallize.py --pattern-id <id>
+```
+
+The script **only mutates pattern memory**. It does NOT write a workflow file.
+
+If the user approves the proposal, **you (the AI) write** the new workflow to `workflows/<name>.yaml` using the schema in Step 1.
+
+**User-explicit bypass:** "每次/以后/always/今后/记住/一直" → crystallize NOW (skip threshold). Write the workflow immediately.
+
+## Pattern Memory Schema
+
+`scripts/pattern-memory.yaml` (managed by scripts):
+
+```yaml
+next_id: 1                       # global monotonic counter
+patterns:                        # count < 2
+  - id: 1
+    signature: "agent → generate"
+    task_family: "code review"
+    count: 2
+    first_seen: 2026-08-01
+    last_seen: 2026-08-05
+pending_crystallization:         # count >= 2, awaiting approval
+  []
+archived_patterns:               # declined 2+ times
+  []
+invocations:                     # append-only log
+  - id: 1
+    timestamp: 2026-08-05
+    signature: "agent → generate"
+    matched_workflow: code-review-pipeline
+```
+
+## Signature Computation
+
+Format: `kind|kind → kind → kind|kind`
+- `|` separates parallel siblings
+- `→` separates sequential phases
+- `agent` and `generate` are normalized as equivalent (only `classify`/`input`/`tool` change signature)
+
+Examples:
+- `classify → agent|agent → generate` (route, parallel, merge)
+- `agent → generate → agent → generate` (linear)
 
 ## Anti-Patterns
 
 | Don't | Do |
 |-------|-----|
-| Execute multi-step work sequentially when steps are independent | Parallel dispatch |
-| Use sonnet/opus for lookups and reads | Route to haiku for T0/T1 |
-| Start coding without DAG plan for T2+ | Decompose first |
-| Run agents one at a time when they don't depend on each other | Batch parallel Agent calls |
-| Skip tracking for complex DAGs | TaskCreate per step |
-| Let a failed step silently derail the DAG | on_failure fallback |
-| Depend on steps that may never execute (conditional routes, fallbacks) | Only depend on guaranteed-execution steps |
+| Skip Step 0 | Always check `workflows/` first |
+| "Remember to track" without script | Run GATE 2 script |
+| Threshold 3+ | Threshold = 2 |
+| Look in `.claude/workflows/` | Use `workflows/` (this skill) |
+| Edit pattern-memory.yaml by hand | Always use scripts |
+| Skip on_failure fallbacks | Every risky step gets one |
+| Run scripts from arbitrary CWD | Run from skill directory or with absolute path |
+| Run record_invocation.py concurrently | One script at a time (no file locking) |
 
-## Step 5: Workflow Crystallization (Save Repeated Patterns Only)
+## Script Invocation Notes
 
-Workflow crystallization saves PROVEN patterns — not every ad-hoc DAG. The rule: a pattern must be observed **3 times** before it earns a permanent `.yaml` file. One-off workflows are never saved.
+- `--matched ""` is equivalent to `--matched null` (treated as ad-hoc, counts toward crystallization).
+- **Concurrency:** This skill is designed for single-script sequential
+  use. Concurrent invocations of `record_invocation.py` are NOT
+  supported — would require `fcntl.flock`. Run gates one at a time.
+- **Path:** Always run from this skill's directory, or pass an absolute
+  path to `<skill_dir>/scripts/record_invocation.py`.
+- **Dependencies:** All scripts require **PyYAML** (`pip install pyyaml`).
 
-### Complexity Gate
+## Undocumented Workflow Fields (top-level)
 
-Only T2 and T3 tasks are eligible for crystallization. T0 (lookup/explain) and T1 (simple edit) tasks are never tracked.
+These fields appear in existing workflows but are not part of the core schema:
 
-### Pattern Memory File
+- `kind: meta` — workflow kind marker; all workflows in this skill use this
+- `always: false` — workflow is not always loaded; only triggered by Step 0 match
+- `final_text_mode: auto` — synthesis mode after DAG completes (auto/raw/step:<id>)
 
-Use `.claude/.pattern-memory.yaml` to track ad-hoc DAG patterns across sessions:
+## Script Internals
 
-```yaml
-# .claude/.pattern-memory.yaml
-patterns:
-  - signature: "agent|agent|generate→agent|generate→generate"
-    task_family: "Multi-phase implementation with parallel audit and review"
-    first_seen: 2026-06-06
-    count: 2
-    last_seen: 2026-06-12
-```
-
-### Pattern Signature
-
-A signature is the step-kind sequence with `|` for parallel groups, `→` for sequential:
-- `agent|agent → generate → agent|generate → generate` means: 2 parallel agents, then a generate, then agent+generate in parallel, then generate
-
-### Crystallization Workflow
-
-**1st occurrence (count = 1):**
-- Compute the pattern signature
-- If no matching signature exists in `.claude/.pattern-memory.yaml`, add it with count=1
-- Do NOT propose crystallization — one occurrence is not enough
-- Do NOT mention it to the user
-
-**2nd occurrence (count = 2):**
-- Increment count to 2
-- Still do NOT propose yet — borderline, observe one more time
-
-**3rd occurrence (count >= 3):**
-- NOW propose crystallization:
-  ```
-  This workflow pattern has been used 3 times now. Save it for reuse?
-
-  Name: <suggested-kebab-case-name>
-  Triggers: <2-3 natural phrases users would say>
-  Steps: <summary of the DAG structure>
-
-  Save to .claude/workflows/<name>.yaml? [y/n/edit]
-  ```
-- If user approves, write the YAML and remove the pattern from `.claude/.pattern-memory.yaml`
-
-### Automatic Crystallization (Bypasses Repetition Threshold)
-
-If the user says "每次/以后/always/今后/记住" explicitly, crystallize **immediately** regardless of repetition count:
-- "每次发版前都跑这个" → crystallize immediately, don't ask
-- "以后遇到这种问题都用这个流程" → crystallize immediately
-- "记住这个流程" → crystallize immediately
-
-This is the only case where a single-occurrence pattern gets saved.
-
-### Crystallization Validation Checklist (MUST PASS before writing .yaml)
-
-Before crystallizing ANY workflow (either by 3-occurrence threshold or automatic bypass), validate the DAG against these rules. If any check fails, fix the DAG FIRST, then crystallize.
-
-- [ ] **No deadlock**: every `depends_on` target is a step that ALWAYS executes (not conditional, not a fallback)
-- [ ] **Route completeness**: every `output_choices` value in `classify`/`input` steps has a matching `route.when` entry
-- [ ] **Fallback isolation**: `on_failure` targets appear ONLY as `on_failure` values, never in another step's `depends_on`
-- [ ] **Merge correctness**: steps after conditional branches depend on the common ancestor, not on branch-specific targets
-- [ ] **Acyclicity**: no circular dependency chain (step A → B → ... → A)
-- [ ] **No hardcoded paths**: trigger phrases and prompts are generic, not tied to specific file paths or project names
-- [ ] **Cross-platform commands**: `tool: Bash` commands use portable syntax (`python`, `git`, `npx`) — no `rm -rf`, `sed -i`, `/tmp/`, or shell-only constructs
-
-### Workflow Self-Healing (Auto-Optimize Existing Workflows)
-
-When executing an existing workflow, if it exhibits ANY of these symptoms, auto-fix it and update the `.yaml` file:
-
-#### Detection Triggers
-
-| Symptom | Auto-Fix |
-|---------|----------|
-| A step hangs indefinitely (deadlock detected) | Analyze `depends_on` vs route/fallback reachability, remove unreachable dependencies |
-| A step's `on_failure` target is listed in another step's `depends_on` | Remove the fallback from `depends_on`, apply DAG Rule 8 |
-| A `classify`/`input` route is missing coverage for some `output_choices` | Add missing route entries or a default route |
-| A route branch merges into a step that depends on ALL branches (not the common ancestor) | Fix the merge point to depend on the common ancestor (DAG Rule 7) |
-| A step has no `on_failure` but is a key risk point (agent execution, external tool call) | Add `on_failure` fallback with a generate step that reports the failure |
-| A `tool` step uses an echo/placeholder command instead of actual work | Replace with a real tool invocation or document it as a stub with a comment |
-| A `tool: Bash` command is platform-specific (`rm -rf`, `sed -i`, `/tmp/`, etc.) | Replace with cross-platform equivalent (`python -c "..."`, `git`, `npx`) |
-
-#### Self-Healing Process
-
-1. **Detect**: When a workflow step fails, hangs, or produces obviously wrong output, pause and analyze the root cause.
-2. **Diagnose**: Identify which DAG Rule (1-8) was violated. Log the finding.
-3. **Fix**: Apply the minimal fix to the workflow `.yaml` file. Follow the same validation checklist as crystallization.
-4. **Report**: Tell the user what was fixed and why:
-   ```
-   Auto-fixed workflow `<name>`: <brief description of the issue and fix>.
-   ```
-5. **Do NOT ask for permission** — self-healing fixes correctness bugs, not design changes. If the fix is potentially controversial (e.g., adding a new step), ask first.
-
-#### Periodic Health Check
-
-**At session start or when listing workflows**, scan all `.yaml` files in `.claude/workflows/` for:
-
-| Issue | Severity | Action |
-|-------|----------|--------|
-| Missing `on_failure` on any `agent`/`tool` step | **CRITICAL** | **Auto-fix immediately** — add `on_failure` with a generate fallback. Do NOT ask for permission. |
-| Deadlock patterns (step depending on fallback-only or conditional-only step) | **CRITICAL** | **Auto-fix immediately** — remove unreachable dependencies |
-| Placeholder `tool` commands (`echo`, `true`, empty params) | HIGH | Replace with real command or cross-platform equivalent |
-| Platform-specific `tool: Bash` commands (`rm -rf`, `sed -i`, `/tmp/` paths) | MEDIUM | Replace with cross-platform equivalent |
-| Route coverage gaps | HIGH | Add missing route entries
-
-### When NOT to Track
-
-Do NOT even record in pattern memory:
-- T0/T1 tasks (too simple)
-- One-off investigations ("what caused yesterday's outage?")
-- Trivial 1-2 step sequences
-- Workflows containing hardcoded file paths or timestamps
-- Debugging sessions where the steps were exploratory
-
-### Anti-Crystallization (When NOT to save even at count >= 3)
-
-Even after 3+ repetitions, do NOT crystallize if:
-- The pattern is essentially "read → think → answer" (every task does this)
-- The steps contain project-specific paths or configuration that won't transfer
-- An existing workflow in `.claude/workflows/` already covers the same pattern
-
-## Integration with Existing Rules
-
-This skill sits ABOVE the user's existing agent orchestration rules (common/agents.md, common/development-workflow.md). Those rules define WHAT agents exist and WHEN to use them. This skill defines HOW to structure and execute the work across those agents.
-
-Think of it as: existing rules = catalog of capabilities, meta-orchestrator = the execution engine that composes them.
+All scripts require **PyYAML** (`pip install pyyaml`). They use atomic
+write (`tempfile` + `os.replace` + `fsync`) and a global monotonic `next_id`
+counter to prevent collisions across the four arrays (`patterns`,
+`pending_crystallization`, `archived_patterns`, `invocations`).`pending_crystallization`, `archived_patterns`).
