@@ -80,10 +80,13 @@ def main():
 
     sig = pattern["signature"]
     family = pattern["task_family"]
-    # Safe-name suggestion: only [a-z0-9-], max 32 chars.
+    # Safe-name suggestion: ASCII only ([a-z0-9-]), max 32 chars.
+    # Reject non-ASCII characters (CJK, accents) to keep the filename
+    # portable across shells, git, and case-insensitive filesystems.
+    ascii_family = family.encode("ascii", "ignore").decode("ascii").lower()
     suggested_name = "".join(
         c if c.isalnum() or c == "-" else "-"
-        for c in family.lower()
+        for c in ascii_family
     )[:32].strip("-") or "new-workflow"
     count = pattern.get("count", 0)
 

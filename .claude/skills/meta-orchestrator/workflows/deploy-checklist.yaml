@@ -8,6 +8,9 @@ triggers:
   - 上线前检查
   - 发版检查
   - deployment checklist
+  - 部署前检查
+  - 部署检查
+  - 部署
 meta_priority: 15
 always: false
 final_text_mode: auto

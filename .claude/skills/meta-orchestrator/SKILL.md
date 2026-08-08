@@ -186,7 +186,12 @@ the crystallization counter.
    - **Description keyword overlap** (≥2 keywords) → medium (weight 5)
    - **Single keyword overlap** → weak (weight 1)
    - **No overlap** → no match (weight 0)
-4. **Tiebreaker rules** (apply in order):
+4. **Match threshold**: a workflow must score ≥ 1 to be a candidate. If
+   every workflow scored 0 (e.g. "what's the weather today"), fall
+   through to Step 0.5. A score of 1 from a single description keyword
+   counts as a match — semantic proximity beats literal trigger phrase
+   when the user paraphrases ("部署前检查" ≈ `deploy-checklist`).
+5. **Tiebreaker rules** (apply in order):
    1. Higher total score wins
    2. Higher `meta_priority` wins
    3. After tie, **Read the full `triggers:` list** of the tied workflows
@@ -195,7 +200,7 @@ the crystallization counter.
       closely wins.
    4. If still tied, fall through to Step 0.5 (composing ad-hoc is safer
       than picking the wrong workflow).
-5. No match (all scores 0) → fall through to Step 0.5
+6. No match (all scores < 1) → fall through to Step 0.5
 
 ## Step 0.5: Tier Classification
 
@@ -527,4 +532,4 @@ These fields appear in existing workflows but are not part of the core schema:
 All scripts require **PyYAML** (`pip install pyyaml`). They use atomic
 write (`tempfile` + `os.replace` + `fsync`) and a global monotonic `next_id`
 counter to prevent collisions across the four arrays (`patterns`,
-`pending_crystallization`, `archived_patterns`, `invocations`).`pending_crystallization`, `archived_patterns`).
+`pending_crystallization`, `archived_patterns`, `invocations`).
