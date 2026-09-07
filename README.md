@@ -77,23 +77,40 @@
 - **jq**（Claude Code Stop hook 用来读 JSON）：`brew install jq` / `apt install jq`
 - **Claude Code** 或 **Codex** 任一已安装
 
-### 1. 克隆仓库
+### 方式 A：一键安装（推荐）
 
 ```bash
-# Claude Code 用户
-git clone https://github.com/yourname/Meta-Orchestrator.git \
-  ~/.claude/skills/meta-orchestrator
+git clone https://github.com/yourname/Meta-Orchestrator.git
+cd Meta-Orchestrator
+./install.sh                       # 给 Claude Code 装
+./install.sh --target=both         # 同时给 Claude Code + Codex 装
+./install.sh --dry-run             # 看会做什么但不真写
+./install.sh --uninstall           # 卸载
 ```
+
+`install.sh` 自动完成：
+
+1. rsync 同步 skill 文件到 `~/.claude/skills/meta-orchestrator/`
+2. 写 `~/.claude/settings.json` 的 Stop hook
+3. **写 `~/.claude/CLAUDE.md`**——这是关键，强制 Claude Code 每轮都加载 SKILL.md，**不依赖** description 字段的模糊匹配
+4. 跑自检（`validate_dag.py` + `_matcher.py`）
+
+### 方式 B：AI 对话式安装
+
+直接跟 Claude Code 说：
+
+```
+帮我装一下 meta-orchestrator skill，
+从 https://github.com/yourname/Meta-Orchestrator.git 克隆，
+按 README 的 install.sh 步骤走，装好告诉我怎么验证。
+```
+
+Claude 会自己跑 `git clone` + `bash install.sh` + 自检 + 给你验证命令。
+
+### 方式 C：手动三步（小白的进阶）
 
 ```bash
-# Codex 用户
-git clone https://github.com/yourname/Meta-Orchestrator.git \
-  ~/.codex/skills/meta-orchestrator
-```
-
-### 2. 配 Stop hook（Claude Code）
-
-进项目根目录，跑下面这一段（它会自动写 `~/.claude/settings.json`）：
+# 1. 克隆
 
 ```bash
 cd /path/to/your-project
@@ -116,6 +133,30 @@ print('✓ Stop hook configured at', p)
 PYEOF
 ```
 
+### 2.5 强制加载 SKILL.md（关键！）
+
+光装好 skill 不够——Claude Code 默认按 description 软匹配加载，**不是**每次都进上下文。手动写 `~/.claude/CLAUDE.md` 强制加载：
+
+```bash
+cat > ~/.claude/CLAUDE.md <<'MDEOF'
+# Auto-installed by meta-orchestrator
+
+## Always-loaded skills
+
+@~/.claude/skills/meta-orchestrator/SKILL.md
+
+## Behavior
+
+- Treat `meta-orchestrator` as default-on. Always loaded.
+- Honor opt-out keywords: `skip`, `--no`, `don't run orchestrator`.
+- After every response, emit the
+  `<!-- meta-orchestrator: sig=... family=... matched=... -->`
+  marker (or call `orchestrator.py record` directly).
+MDEOF
+```
+
+**`install.sh` 已经自动帮你写这一步。**
+
 ### 3. 验证安装
 
 ```bash
@@ -124,6 +165,21 @@ python3 ~/.claude/skills/meta-orchestrator/scripts/validate_dag.py
 
 python3 ~/.claude/skills/meta-orchestrator/scripts/_matcher.py --text "fix bug"
 # → 应该返回 JSON，含 "matched": "bug-fix-workflow"
+```
+
+**额外验证 force-load 生效**：
+
+```bash
+# 1. 看 CLAUDE.md 有没有写好
+cat ~/.claude/CLAUDE.md
+# 应该看到 @~/.claude/skills/meta-orchestrator/SKILL.md
+
+# 2. 看 settings.json 有没有 hook
+cat ~/.claude/settings.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('hooks', {}).get('Stop', []))"
+# 应该看到包含 stop-reminder 的 hook
+
+# 3. 开新 Claude Code session，随便问句"修个 bug"
+# → 模型应该直接按 workflows/bug-fix-workflow.yaml 的 DAG 跑
 ```
 
 ### 4. 用起来

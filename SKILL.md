@@ -1,15 +1,14 @@
 ---
 name: meta-orchestrator
 description: |
-  Recommended for non-trivial sessions. Use 'skip' or '--no' to bypass.
-  Manages a workflow DAG library; records invocations for pattern
-  accumulation. On Claude Code a Stop hook auto-runs `orchestrator.py record`
-  after every response. On Codex there is no hook — the model itself must
-  emit the meta-orchestrator marker or invoke `orchestrator.py record`.
-  Opt-out keywords: "skip", "don't run orchestrator", "--no".
-
-  Infrastructure exception: this skill is exempt from Step 0 (it IS
-  the engine). User-facing workflows live in `workflows/<name>.yaml`.
+  MANDATORY default-on skill. Load on every coding session. Opt out with
+  "skip" / "don't run orchestrator" / "--no". Manages a workflow DAG
+  library; auto-records invocations. On Claude Code a Stop hook auto-runs
+  `orchestrator.py record` after every response. On Codex the model
+  itself emits the meta-orchestrator marker or invokes
+  `orchestrator.py record`. This skill is the engine — always present
+  unless explicitly disabled. User-facing workflows live in
+  `workflows/<name>.yaml`.
 ---
 
 # Meta-Orchestrator

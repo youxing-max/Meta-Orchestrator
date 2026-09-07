@@ -1,0 +1,36 @@
+# CLAUDE.md (template)
+
+> 复制本文件内容到 `~/.claude/CLAUDE.md`，强制 Claude Code 始终加载 meta-orchestrator skill。
+> 即使 description 字段没匹配上，这段引用也会让 SKILL.md 进入每轮上下文。
+
+## Always-loaded skills
+
+The following skills must be available in EVERY session, regardless of prompt content:
+
+- `@<SKILL_DIR>/SKILL.md` — meta-orchestrator (the workflow engine itself)
+
+Replace `<SKILL_DIR>` with the absolute install path, typically:
+
+- Claude Code: `~/.claude/skills/meta-orchestrator/SKILL.md`
+- Codex: `~/.codex/skills/meta-orchestrator/SKILL.md`
+
+## Behavior
+
+- Treat `meta-orchestrator` as default-on. Do not ask the user "should I
+  load it?" — it's already loaded.
+- Honor the user's explicit opt-out keywords: `skip`, `--no`, `don't run
+  orchestrator`.
+- After every response, emit the
+  `<!-- meta-orchestrator: sig=... family=... matched=... -->`
+  marker (or call `orchestrator.py record` directly) so the Stop hook
+  can update pattern memory.
+
+## What this skill does
+
+See the linked SKILL.md for full details. TL;DR:
+
+1. **Step 0** — check `workflows/*.yaml` to see if any existing DAG
+   matches the user's request before improvising.
+2. **Step 0.5** — assign a tier (T0–T3) to every task.
+3. **GATE 2/3/4** — record invocations, accumulate patterns, propose
+   crystallization when a pattern hits 3 non-trivial uses.
