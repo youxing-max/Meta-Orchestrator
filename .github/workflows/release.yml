@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Pre-release validation
+        run: |
+          python3 scripts/validate_dag.py
+          python3 scripts/_matcher.py --text "fix bug" > /dev/null
+          echo "Pre-release checks passed."
+
+      - name: Package skill bundle
+        run: |
+          mkdir -p dist
+          # Bundle = skill files only (no .git, no bytecode, no runtime state)
+          tar --exclude='.git' \
+              --exclude='__pycache__' \
+              --exclude='*.pyc' \
+              --exclude='pattern-memory.yaml*' \
+              --exclude='.github' \
+              --exclude='dist' \
+              -czf "dist/meta-orchestrator-${GITHUB_REF_NAME}.tar.gz" \
+              .
+          ls -la dist/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/meta-orchestrator-*.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate skill & workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate all workflow YAMLs
+        run: python3 scripts/validate_dag.py
+
+      - name: Smoke-test _matcher.py
+        run: |
+          output="$(python3 scripts/_matcher.py --text 'fix bug')"
+          echo "$output"
+          echo "$output" | python3 -c "import json, sys; d=json.load(sys.stdin); assert d.get('matched') == 'bug-fix-workflow', d; print('matcher OK')"
+
+      - name: Smoke-test orchestrator.py
+        run: |
+          python3 scripts/orchestrator.py --help || true
+          python3 scripts/orchestrator.py check || true
+
+      - name: Lint shell scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./hooks
+          additional_files: install.sh
+          ignore: SC1091,SC2086,SC2155
+
+  install-dry-run:
+    name: install.sh --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dry-run install
+        run: bash install.sh --dry-run
