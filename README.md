@@ -70,6 +70,19 @@
 
 > 假设你从来没碰过 Claude Code / Codex skill，从这里开始。
 
+### Demo：仓库里有个真实的结晶产物
+
+为了让你看清整个流水线到底写出什么东西，仓库里**故意**留了一个
+`workflows/config-update.yaml`——这是用 `orchestrator.py propose --yes`
+跑过一次后写出的 stub。同样的 invocation 痕迹在 `scripts/pattern-memory.yaml`
+的 `archived_patterns[]` 里能看到（id=2, outcome=crystallized）。
+
+你可以：
+
+- `cat workflows/config-update.yaml` —— 看 stub 长什么样
+- `python3 scripts/_matcher.py --text "config update"` —— 看它被 Step 0 命中
+- 不喜欢就删：`rm workflows/config-update.yaml && git checkout scripts/pattern-memory.yaml`
+
 ### 0. 前置条件
 
 - **Python 3.8+**（系统自带或者 `brew install python3` / `apt install python3`）

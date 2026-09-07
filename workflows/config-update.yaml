@@ -1,0 +1,56 @@
+# Workflow: config-update
+#
+# Auto-crystallized demo showing what a STUB workflow file looks like
+# after `orchestrator.py propose --pattern-id N --yes` runs. The user is
+# expected to edit the TODOs before reuse.
+#
+# History of this file (recorded in scripts/pattern-memory.yaml):
+#   - id=2  signature="Read → Edit → Bash"  family=config-update
+#   - count=3  first_seen=2026-09-07  last_seen=2026-09-07
+#   - intent: "Update config file and verify"
+#   - outcome: crystallized
+#   - workflow_path: workflows/config-update.yaml
+#   - drained_invocations: 3
+#
+# TODO before reuse: replace the prompt with real instructions. Suggested
+# shape (a minimal config-update DAG):
+#
+#   composition:
+#     steps:
+#       - id: read_current
+#         kind: agent
+#         agent_type: Explore
+#         prompt: "Read the current config file and report its structure."
+#       - id: apply_edit
+#         kind: agent
+#         agent_type: general-purpose
+#         model: sonnet
+#         depends_on: [read_current]
+#         prompt: "Apply the requested config change. No scope creep."
+#       - id: verify
+#         kind: tool
+#         tool: bash
+#         depends_on: [apply_edit]
+#         params: {cmd: "python3 -c 'import yaml; yaml.safe_load(open(\"config.yaml\"))'"}
+#       - id: summarize
+#         kind: generate
+#         depends_on: [verify]
+#         prompt: "Summarize the change in one paragraph."
+#
+# For now we ship the bare stub so the validate_dag check passes and
+# the crystallization pipeline has a non-trivial artifact on disk.
+
+name: config-update
+description: "Stub for: config-update"
+triggers:
+  - config-update
+meta_priority: 10
+kind: meta
+always: false
+final_text_mode: auto
+composition:
+  steps:
+    - id: implement
+      kind: agent
+      agent_type: general-purpose
+      prompt: "TODO: fill in based on signature `Read → Edit → Bash`"
