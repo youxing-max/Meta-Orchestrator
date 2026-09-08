@@ -8,21 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `install.sh` — one-shot installer with `--target=claude|codex|both`,
-  `--uninstall`, `--dry-run` flags
-- `CLAUDE.md.template` — force-load mechanism for default-on behavior
-- GitHub Actions CI (`.github/workflows/ci.yml`) — validates workflows,
-  smoke-tests matcher, lints shell scripts
-- GitHub Actions release (`.github/workflows/release.yml`) — tags
-  trigger a tarball + GitHub Release
-- Issue templates: bug, feature request, crystallization proposal
-- `SECURITY.md` — disclosure policy and threat model
-- `workflows/config-update.yaml` — real crystallized artifact (demo)
-- README rewrite: beginner-friendly intro + architecture deep-dive
+- `install.ps1` — Windows PowerShell installer mirroring `install.sh`
+  (`-Target claude|codex|both`, `-Uninstall`, `-DryRun`). Writes
+  `%USERPROFILE%\.claude\CLAUDE.md` for force-load, wires the Stop
+  hook, runs the same self-check.
+- README: Windows prerequisites section, `install.ps1` command table,
+  FAQ entry for PowerShell execution policy + winget install hints.
+- Roadmap entry: Windows file-lock research moved to "still open" line
+  alongside the now-shipped installer.
 
 ### Changed
-- `SKILL.md` description: "Recommended for non-trivial sessions" →
-  "MANDATORY default-on"
+- `install.sh` / `install.ps1` both use the same Claude Code settings
+  path on their respective platforms (`~/.claude/settings.json` on POSIX,
+  `%USERPROFILE%\.claude\settings.json` on Windows).
 
 ## [0.x] — historical
 

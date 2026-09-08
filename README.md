@@ -85,12 +85,20 @@
 
 ### 0. 前置条件
 
-- **Python 3.8+**（系统自带或者 `brew install python3` / `apt install python3`）
+- **Python 3.8+**
+  - macOS / Linux：系统自带或 `brew install python3` / `apt install python3`
+  - Windows：`winget install Python.Python.3.12` 或 `choco install python3`
+  - 验证：`python3 --version`
 - **PyYAML**：`pip install pyyaml`
-- **jq**（Claude Code Stop hook 用来读 JSON）：`brew install jq` / `apt install jq`
+- **jq**（Claude Code Stop hook 用来读 JSON）
+  - macOS / Linux：`brew install jq` / `apt install jq`
+  - Windows：`winget install jqlang.jq` / `choco install jq`
 - **Claude Code** 或 **Codex** 任一已安装
+- Windows 用户额外需要 **PowerShell 5.1+**（Win10/11 自带）或 PowerShell 7+
 
 ### 方式 A：一键安装（推荐）
+
+#### macOS / Linux / WSL
 
 ```bash
 git clone https://github.com/yourname/Meta-Orchestrator.git
@@ -101,12 +109,29 @@ cd Meta-Orchestrator
 ./install.sh --uninstall           # 卸载
 ```
 
-`install.sh` 自动完成：
+#### Windows（PowerShell）
 
-1. rsync 同步 skill 文件到 `~/.claude/skills/meta-orchestrator/`
+```powershell
+git clone https://github.com/yourname/Meta-Orchestrator.git
+cd Meta-Orchestrator
+
+# 如果系统禁止运行脚本，先放宽一次执行策略（仅当前用户）：
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+.\install.ps1                       # 给 Claude Code 装
+.\install.ps1 -Target both          # 同时给 Claude Code + Codex 装
+.\install.ps1 -DryRun               # 看会做什么但不真写
+.\install.ps1 -Uninstall            # 卸载
+```
+
+`install.sh` / `install.ps1` 自动完成：
+
+1. 同步 skill 文件到 `~/.claude/skills/meta-orchestrator/`（Windows 下是 `%USERPROFILE%\.claude\skills\meta-orchestrator\`）
 2. 写 `~/.claude/settings.json` 的 Stop hook
 3. **写 `~/.claude/CLAUDE.md`**——这是关键，强制 Claude Code 每轮都加载 SKILL.md，**不依赖** description 字段的模糊匹配
 4. 跑自检（`validate_dag.py` + `_matcher.py`）
+
+> Windows 端的 Stop hook 仍然是一行 `bash` 命令调用 `claude-code-stop-reminder.sh`。Windows 10+ 自带 WSL / Git Bash，二选一装好就行（推荐 Git for Windows 的 Bash）。
 
 ### 方式 B：AI 对话式安装
 
@@ -115,10 +140,10 @@ cd Meta-Orchestrator
 ```
 帮我装一下 meta-orchestrator skill，
 从 https://github.com/yourname/Meta-Orchestrator.git 克隆，
-按 README 的 install.sh 步骤走，装好告诉我怎么验证。
+按 README 的 install.sh / install.ps1 步骤走，装好告诉我怎么验证。
 ```
 
-Claude 会自己跑 `git clone` + `bash install.sh` + 自检 + 给你验证命令。
+Claude 会自己跑 `git clone` + `bash install.sh`（或 `pwsh install.ps1`）+ 自检 + 给你验证命令。
 
 ### 方式 C：手动三步（小白的进阶）
 
@@ -410,18 +435,48 @@ Claude: [直接按预设 DAG 跑，不再临时凑步骤]
 
 ## 安装详解
 
-### Claude Code（完整版）
+### macOS / Linux（bash）
 
 ```bash
 # 1. 克隆
 git clone https://github.com/yourname/Meta-Orchestrator.git \
   ~/.claude/skills/meta-orchestrator
 
-# 2. 配 hook（见上面"5 分钟跑起来"第 2 步）
+# 2. 跑 install.sh（自动配 hook + 写 CLAUDE.md + 自检）
+cd ~/.claude/skills/meta-orchestrator
+./install.sh
 
 # 3. 验证
 python3 ~/.claude/skills/meta-orchestrator/scripts/validate_dag.py
 ```
+
+### Windows（PowerShell）
+
+```powershell
+# 1. 克隆到 skill 目录
+git clone https://github.com/yourname/Meta-Orchestrator.git `
+  $env:USERPROFILE\.claude\skills\meta-orchestrator
+
+# 2. 跑 install.ps1
+cd $env:USERPROFILE\.claude\skills\meta-orchestrator
+.\install.ps1
+
+# 3. 验证
+python $env:USERPROFILE\.claude\skills\meta-orchestrator\scripts\validate_dag.py
+```
+
+**先决条件（Windows）**：
+
+| 组件 | 推荐安装方式 |
+|------|--------------|
+| Python 3.8+ | `winget install Python.Python.3.12` 或 `choco install python3` |
+| PyYAML | `pip install pyyaml` |
+| jq | `winget install jqlang.jq` 或 `choco install jq` |
+| bash（跑 hook 用） | Git for Windows 自带，或 WSL |
+| PowerShell 5.1+ | Win10/11 自带；想用新版可 `winget install Microsoft.PowerShell` |
+
+> Stop hook 在 Windows 上仍是一行 `bash <skill>/hooks/claude-code-stop-reminder.sh`。
+> Claude Code 在 `%USERPROFILE%\.claude\settings.json` 里执行这个命令，所以 `bash` 必须在 PATH 上（Git Bash 默认安装即满足）。
 
 ### Codex（完整版）
 
@@ -924,6 +979,34 @@ echo '{"stop_hook_active": false, "transcript_path": "/dev/null"}' | \
 - 只在单进程跑脚本
 - 依赖 `.bak` 自动恢复（每次写前备份，损坏时回退）
 
+### Q：Windows 下如何安装 / 卸载？
+
+跑 `install.ps1`，参数和 bash 版一一对应：
+
+| bash | PowerShell |
+|------|------------|
+| `./install.sh` | `.\install.ps1` |
+| `./install.sh --target=both` | `.\install.ps1 -Target both` |
+| `./install.sh --dry-run` | `.\install.ps1 -DryRun` |
+| `./install.sh --uninstall` | `.\install.ps1 -Uninstall` |
+
+依赖安装走 `winget` / `choco`：
+
+- `winget install Python.Python.3.12 jqlang.jq Git.Git`
+- 或者 `choco install python3 jq git`
+
+如果 PowerShell 报 "running scripts is disabled on this system"，先放宽当前用户的执行策略：
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+卸载：
+
+```powershell
+.\install.ps1 -Uninstall
+```
+
 ### Q：怎么导出 / 备份我的 workflow 库？
 
 ```bash
@@ -1003,8 +1086,9 @@ python3 scripts/orchestrator.py check          # check 正常
 
 ## 路线图
 
+- [x] Windows `install.ps1`（与 bash 版参数对齐）
+- [ ] Windows `msvcrt` 文件锁（当前用 `.bak` 自愈代替）
 - [ ] 正式 pytest 套件
-- [ ] Windows `msvcrt` 文件锁
 - [ ] Codex `turn_end` 真支持（等 Codex 升级 hook surface）
 - [ ] Web UI 看 pattern memory
 - [ ] workflow 之间的 DAG 组合（一个 workflow 引用另一个）
