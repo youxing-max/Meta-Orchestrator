@@ -91,8 +91,29 @@ with open(claude_md, encoding="utf-8") as f:
     existing = f.read()
 
 stripped = pattern.sub("", existing).rstrip()
-# Leave a trailing newline for POSIX-friendly text files.
-new_content = stripped + ("\n" if stripped and not stripped.endswith("\n") else "")
+
+# Round-trip requires recovering whether the user's ORIGINAL content
+# had a trailing newline. Since `existing` here is the post-install
+# layout (user\n + separator + block), the byte at sentinel_open - 2
+# is the LAST byte of user content. If that's \n, user had a
+# trailing newline; if not, user didn't.
+#
+# When no sentinel is present (e.g. we somehow ran uninstall on a
+# file we never managed), existing IS the user content and we look
+# at its tail.
+m = re.search(re.escape(SENTINEL_OPEN), existing)
+if m:
+    if m.start() >= 2:
+        user_ended_with_newline = existing[m.start() - 2] == "\n"
+    else:
+        user_ended_with_newline = False
+else:
+    user_ended_with_newline = existing.endswith("\n")
+
+# Round-trip rule:
+#   - user had trailing \n    -> file ends with \n
+#   - user had NO trailing \n -> file ends without \n
+new_content = stripped + ("\n" if (stripped and user_ended_with_newline) else "")
 
 if new_content == existing:
     print(f"  no meta-orchestrator block in {claude_md}")
@@ -272,10 +293,33 @@ if os.path.exists(claude_md):
         existing = f.read()
 
 stripped = pattern.sub("", existing).rstrip()
-# Always preserve exactly one blank line between the user's content and
-# our block when both are present; otherwise start at top of file.
-prefix = stripped + "\n\n" if stripped else ""
+
+# Capture the user-content trailing-newline convention. The signal:
+#   - no sentinel present  -> existing IS the user file; its last byte
+#     tells us whether it ended with \n
+#   - sentinel present     -> the byte at `sentinel_open - 2` is the
+#     LAST byte of user content (sentinel_open - 1 is our separator
+#     newline). If that byte is \n, user had trailing newline; else not.
+m = re.search(re.escape(SENTINEL_OPEN), existing)
+if m:
+    if m.start() >= 2:
+        user_ended_with_newline = existing[m.start() - 2] == "\n"
+    else:
+        # Block is at byte 0 or 1 -> user had no content
+        user_ended_with_newline = False
+else:
+    user_ended_with_newline = existing.endswith("\n")
+
+# Build the install layout. Rules:
+#   - empty user content         -> block at top of file, no leading ws
+#   - user content + trailing \n -> "\n\n" separator (one blank line)
+#   - user content + NO trailing \n -> "\n" separator (flush, no blank)
+if stripped:
+    prefix = stripped + ("\n\n" if user_ended_with_newline else "\n")
+else:
+    prefix = ""
 new_content = prefix + block
+
 
 if new_content == existing:
     print(f"  CLAUDE.md already has current meta-orchestrator block at {claude_md}")

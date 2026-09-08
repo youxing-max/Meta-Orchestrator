@@ -217,8 +217,36 @@ if os.path.exists(claude_md):
     with open(claude_md, encoding="utf-8") as f:
         existing = f.read()
 
-stripped = pattern.sub("", existing).rstrip() + ("\n" if existing.strip() else "")
-new_content = stripped + ("\n" if stripped and not stripped.endswith("\n") else "") + block
+# Recover whether the user's ORIGINAL content ended with a newline.
+# The post-install file is always:
+#     user_content + "\n" + block       (user had no trailing \n)
+#     user_content + "\n\n" + block     (user had trailing \n)
+# so byte at sentinel_open - 2 is the LAST byte of user content.
+m = re.search(re.escape(SENTINEL_OPEN), existing)
+if m:
+    if m.start() >= 2:
+        user_ended_with_newline = existing[m.start() - 2] == "\n"
+    else:
+        user_ended_with_newline = False
+else:
+    user_ended_with_newline = existing.endswith("\n")
+
+stripped = pattern.sub("", existing).rstrip()
+# Install layout rules:
+#   - empty user content            -> block at top, no leading ws
+#   - user content + trailing \n    -> "\n\n" separator (one blank line)
+#   - user content + NO trailing \n -> "\n"  separator (flush)
+# Uninstall layout rules:
+#   - user had trailing \n    -> file ends with \n
+#   - user had NO trailing \n -> file ends without \n
+if stripped:
+    if skill_md:  # install path passes a non-empty SKILL_MD_REF
+        prefix = stripped + ("\n\n" if user_ended_with_newline else "\n")
+        new_content = prefix + block
+    else:  # uninstall path -- SKILL_MD_REF is empty
+        new_content = stripped + ("\n" if user_ended_with_newline else "")
+else:
+    new_content = block if skill_md else ""
 
 if new_content == existing:
     print(f"  CLAUDE.md already has current meta-orchestrator block at {claude_md}")
