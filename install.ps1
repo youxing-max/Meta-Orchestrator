@@ -93,174 +93,15 @@ function Get-PythonCmd {
     return $null
 }
 
-# --- embedded Python snippets -------------------------------------------
-# We keep these as here-strings so they survive code review and so the
-# Windows install path stays parallel to the bash one. Each block is
-# passed to the discovered Python interpreter via stdin.
-
-$PythonWireStopHook = @'
-import json, os, sys
-dry = os.environ.get("DRY") == "1"
-hook_cmd = os.environ["HOOK_CMD_ABS"]
-p = os.path.expanduser(os.path.join(os.environ["USERPROFILE"], ".claude", "settings.json"))
-os.makedirs(os.path.dirname(p), exist_ok=True)
-data = {}
-if os.path.exists(p):
-    try:
-        data = json.load(open(p, encoding="utf-8"))
-    except Exception:
-        data = {}
-hooks_root = data.setdefault("hooks", {})
-st = hooks_root.setdefault("Stop", [])
-if not any("stop-reminder" in str(h) for hs in st for h in hs.get("hooks", [])):
-    st.append({"hooks": [{"type": "command", "command": hook_cmd}]})
-if dry:
-    print("  DRY-RUN: would write", p)
-    print("  hook_cmd:", hook_cmd)
-else:
-    json.dump(data, open(p, "w", encoding="utf-8"), indent=2)
-    print(f"  Stop hook configured at {p}")
-'@
-
-# Prune only the Stop hook entries we added; keep any other Stop hooks
-# the user (or another tool) configured. Mirrors the bash install.sh
-# uninstall semantics.
-$PythonPruneStopHook = @'
-import json, os, sys
-dry = os.environ.get("DRY") == "1"
-p = os.path.expanduser(os.path.join(os.environ["USERPROFILE"], ".claude", "settings.json"))
-if not os.path.exists(p):
-    sys.exit(0)
-try:
-    data = json.load(open(p, encoding="utf-8"))
-except Exception:
-    sys.exit(0)
-if not isinstance(data, dict):
-    sys.exit(0)
-hooks_root = data.get("hooks", {})
-st = hooks_root.get("Stop", [])
-new = [hs for hs in st
-       if not any("stop-reminder" in h.get("command", "") for h in hs.get("hooks", []))]
-if new == st:
-    print(f"  no meta-orchestrator Stop hook found in {p}")
-    sys.exit(0)
-data["hooks"]["Stop"] = new
-if dry:
-    print(f"  DRY-RUN: would prune Stop hook from {p}")
-    sys.exit(0)
-json.dump(data, open(p, "w", encoding="utf-8"), indent=2)
-print(f"  pruned Stop hook from {p}")
-'@
-
-# Idempotent CLAUDE.md editor.
-#
-# We never *replace* the user's CLAUDE.md — only append a sentinel-delimited
-# block (or strip it on uninstall). The block we own is wrapped between two
-# unique sentinels so re-running the installer is a no-op, and uninstall
-# can peel our block out without touching anything the user wrote.
-$PythonUpsertClaudeMd = @'
-import os, re, sys
-
-dry = os.environ.get("DRY") == "1"
-claude_md = os.environ["CLAUDE_MD_PATH"]
-skill_md  = os.environ["SKILL_MD_REF"]
-SENTINEL_OPEN  = "<!-- >>> meta-orchestrator (managed block, do not edit) >>>"
-SENTINEL_CLOSE = "<!-- <<< meta-orchestrator <<<"
-
-block = f"""{SENTINEL_OPEN}
-# Auto-installed by meta-orchestrator/install.ps1
-# This block is owned by the installer. Re-running install.ps1 re-applies
-# it idempotently; -Uninstall strips it. Anything outside these sentinels
-# is yours to edit.
-
-## Always-loaded skills
-
-The following skill must be available in EVERY Claude Code session,
-regardless of prompt content. This is force-loaded via CLAUDE.md, not
-relying on description matching.
-
-@{skill_md}
-
-## Behavior
-
-- Treat `meta-orchestrator` as default-on. Do not ask the user
-  "should I load it?" -- it is already loaded.
-- Honor explicit opt-out keywords: `skip`, `--no`, `don't run orchestrator`.
-- After every response, emit the
-  `<!-- meta-orchestrator: sig=... family=... matched=... -->`
-  marker (or call `orchestrator.py record` directly) so the Stop hook
-  can update pattern memory.
-- Run Step 0 (check workflows/*.yaml) before improvising any non-trivial
-  multi-step plan.
-
-## What this skill does (TL;DR)
-
-1. `workflows/*.yaml` holds reusable DAGs. Match by `triggers` /
-   `description` before improvising.
-2. Tier every task T0-T3; T2/T3 -> decompose into DAG.
-3. GATE 2 (record) -> GATE 3 (check, threshold >=3) -> GATE 4 (propose
-   crystallization) -> workflow file written.
-
-When a pattern's count reaches 3, the hook prompts the user: `y` to
-write a workflow file, `n` to archive as declined.
-{SENTINEL_CLOSE}
-"""
-
-# Strip any prior version of our block (idempotent re-apply + uninstall).
-pattern = re.compile(
-    re.escape(SENTINEL_OPEN) + r".*?" + re.escape(SENTINEL_CLOSE) + r"\n*",
-    re.DOTALL,
-)
-
-existing = ""
-if os.path.exists(claude_md):
-    with open(claude_md, encoding="utf-8") as f:
-        existing = f.read()
-
-# Recover whether the user's ORIGINAL content ended with a newline.
-# The post-install file is always:
-#     user_content + "\n" + block       (user had no trailing \n)
-#     user_content + "\n\n" + block     (user had trailing \n)
-# so byte at sentinel_open - 2 is the LAST byte of user content.
-m = re.search(re.escape(SENTINEL_OPEN), existing)
-if m:
-    if m.start() >= 2:
-        user_ended_with_newline = existing[m.start() - 2] == "\n"
-    else:
-        user_ended_with_newline = False
-else:
-    user_ended_with_newline = existing.endswith("\n")
-
-stripped = pattern.sub("", existing).rstrip()
-# Install layout rules:
-#   - empty user content            -> block at top, no leading ws
-#   - user content + trailing \n    -> "\n\n" separator (one blank line)
-#   - user content + NO trailing \n -> "\n"  separator (flush)
-# Uninstall layout rules:
-#   - user had trailing \n    -> file ends with \n
-#   - user had NO trailing \n -> file ends without \n
-if stripped:
-    if skill_md:  # install path passes a non-empty SKILL_MD_REF
-        prefix = stripped + ("\n\n" if user_ended_with_newline else "\n")
-        new_content = prefix + block
-    else:  # uninstall path -- SKILL_MD_REF is empty
-        new_content = stripped + ("\n" if user_ended_with_newline else "")
-else:
-    new_content = block if skill_md else ""
-
-if new_content == existing:
-    print(f"  CLAUDE.md already has current meta-orchestrator block at {claude_md}")
-    sys.exit(0)
-
-if dry:
-    print(f"  DRY-RUN: would append meta-orchestrator block to {claude_md}")
-    sys.exit(0)
-
-os.makedirs(os.path.dirname(claude_md), exist_ok=True)
-with open(claude_md, "w", encoding="utf-8") as f:
-    f.write(new_content)
-print(f"  appended meta-orchestrator block to {claude_md}")
-'@
+# --- install helpers (standalone Python) ---------------------------------
+# The three install-time helpers used to be inlined here as @'...'@
+# PowerShell here-strings. They were relocated to scripts/ because
+# PowerShell here-string parsing has subtle edge cases with multi-line
+# Python (apostrophes inside the body, f-string braces, etc.) that
+# silently broke on pwsh 7. The standalone scripts take their inputs
+# from environment variables (CLAUDE_MD_PATH, SKILL_MD_REF, HOOK_CMD_ABS,
+# USERPROFILE, DRY) and are listed in the install.sh / install.ps1
+# exclude list when syncing into ~/.claude/skills/.
 
 # --- uninstall path ------------------------------------------------------
 if ($Uninstall) {
@@ -288,7 +129,7 @@ if ($Uninstall) {
                 if ($DryRun) {
                     Write-Host "  DRY-RUN: would strip meta-orchestrator block from $claudeMd (preserving other content)"
                 } else {
-                    $PythonUpsertClaudeMd | & $py -
+                    & $py "$Src/scripts/_install_upsert_claude_md.py"
                 }
 
                 # Strip ONLY the Stop hook we added, preserve any others.
@@ -296,7 +137,7 @@ if ($Uninstall) {
                 if ($DryRun) {
                     Write-Host "  DRY-RUN: would prune Stop hook from $HomeDir\.claude\settings.json"
                 } else {
-                    $PythonPruneStopHook | & $py -
+                    & $py "$Src/scripts/_install_prune_stop_hook.py"
                 }
             } else {
                 Write-Warn "python not found -- manually remove the meta-orchestrator block from $claudeMd and the stop-reminder entry from $HomeDir\.claude\settings.json"
@@ -391,13 +232,13 @@ if ($Target -eq 'claude' -or $Target -eq 'both') {
     if ($DryRun) {
         Write-Host "  DRY-RUN: would wire Stop hook command: $hookCmd"
     } else {
-        $PythonWireStopHook | & $py -
+        & $py "$Src/scripts/_install_wire_stop_hook.py"
     }
 
     # Upsert ~/.claude/CLAUDE.md (force-load SKILL.md every session).
     # We APPEND a sentinel-delimited block instead of overwriting, so any
     # user content above / below stays intact across re-installs and
-    # uninstalls. See $PythonUpsertClaudeMd for the strip-on-install
+    # uninstalls. See scripts/_install_upsert_claude_md.py for the strip-on-install
     # idempotency.
     $claudeMdPath = Join-Path $HomeDir '.claude\CLAUDE.md'
     $skillMdRef   = "$Dest\SKILL.md"
@@ -405,7 +246,8 @@ if ($Target -eq 'claude' -or $Target -eq 'both') {
     $env:CLAUDE_MD_PATH = $claudeMdPath
     $env:SKILL_MD_REF   = $skillMdRef
     $env:DRY = if ($DryRun) { '1' } else { '0' }
-    $PythonUpsertClaudeMd | & $py -
+    & $py "$Src/scripts/_install_upsert_claude_md.py"
+}
 
 # --- Codex ---------------------------------------------------------------
 if ($Target -eq 'codex' -or $Target -eq 'both') {
@@ -434,9 +276,9 @@ if (Test-Path $validateDag) {
     }
 }
 $matcher = Join-Path $Src 'scripts\_matcher.py'
-if (Test-Path $matcher -and -not $DryRun) {
+if ((Test-Path $matcher) -and -not $DryRun) {
     $mt = & $py $matcher --text "fix bug" 2>$null
-    if ($LASTEXITCODE -eq 0 -and $mt -match '"matched"') {
+    if (($LASTEXITCODE -eq 0) -and ($mt -match '"matched"')) {
         try {
             $obj = $mt | ConvertFrom-Json
             Write-Ok "_matcher.py: PASS (matched $($obj.matched))"
