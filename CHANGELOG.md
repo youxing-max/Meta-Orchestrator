@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside the now-shipped installer.
 
 ### Changed
+- **Both `install.sh` and `install.ps1` now APPEND a sentinel-delimited
+  block to `~/.claude/CLAUDE.md` instead of overwriting it.** The block
+  is wrapped in `<!-- >>> meta-orchestrator (managed block, do not edit) >>>`
+  / `<!-- <<< meta-orchestrator <<<` sentinels. Re-running either
+  installer is a no-op (strips + re-appends); `--uninstall` /
+  `-Uninstall` strips only the managed block and preserves any user
+  content. SENTINEL strings are shared between the bash and PowerShell
+  installers so the two stay in lock-step.
 - `install.sh` / `install.ps1` both use the same Claude Code settings
   path on their respective platforms (`~/.claude/settings.json` on POSIX,
   `%USERPROFILE%\.claude\settings.json` on Windows).

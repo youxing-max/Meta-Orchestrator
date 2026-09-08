@@ -67,7 +67,51 @@ if [ "$UNINSTALL" = "1" ]; then
   log "Uninstalling meta-orchestrator..."
   if [ "$TARGET" = "claude" ] || [ "$TARGET" = "both" ]; then
     run "rm -rf \"\$HOME/.claude/skills/meta-orchestrator\""
-    run "rm -f \"\$HOME/.claude/CLAUDE.md\""
+
+    # Strip ONLY the managed meta-orchestrator block from CLAUDE.md;
+    # any user content above / below stays untouched.
+    DRY="$DRY_RUN" CLAUDE_MD_PATH="$HOME/.claude/CLAUDE.md" python3 - <<'PYEOF' || true
+import os, re, sys
+
+dry = os.environ["DRY"] == "1"
+claude_md = os.environ["CLAUDE_MD_PATH"]
+
+SENTINEL_OPEN  = "<!-- >>> meta-orchestrator (managed block, do not edit) >>>"
+SENTINEL_CLOSE = "<!-- <<< meta-orchestrator <<<"
+
+pattern = re.compile(
+    re.escape(SENTINEL_OPEN) + r".*?" + re.escape(SENTINEL_CLOSE) + r"\n*",
+    re.DOTALL,
+)
+
+if not os.path.exists(claude_md):
+    sys.exit(0)
+
+with open(claude_md, encoding="utf-8") as f:
+    existing = f.read()
+
+stripped = pattern.sub("", existing).rstrip()
+# Leave a trailing newline for POSIX-friendly text files.
+new_content = stripped + ("\n" if stripped and not stripped.endswith("\n") else "")
+
+if new_content == existing:
+    print(f"  no meta-orchestrator block in {claude_md}")
+    sys.exit(0)
+
+if dry:
+    print(f"  DRY-RUN: would strip meta-orchestrator block from {claude_md}")
+    sys.exit(0)
+
+# If the only thing left is whitespace, delete the file; otherwise write back.
+if not stripped.strip():
+    os.remove(claude_md)
+    print(f"  removed empty {claude_md}")
+else:
+    with open(claude_md, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    print(f"  stripped meta-orchestrator block from {claude_md}")
+PYEOF
+
     # Remove only the hook we added; preserve other Stop hooks
     python3 - <<'PYEOF' "$DRY_RUN" 2>/dev/null
 import json, os, sys
@@ -160,14 +204,29 @@ else:
     print(f"  ✓ Stop hook configured at {p}")
 PYEOF
 
-  # Write ~/.claude/CLAUDE.md pointing at the skill
-  log "Writing ~/.claude/CLAUDE.md (force-load SKILL.md every session)"
+  # Upsert ~/.claude/CLAUDE.md pointing at the skill. We APPEND a
+  # sentinel-delimited block instead of overwriting, so any user content
+  # above / below stays intact across re-installs and uninstalls. The
+  # Python helper strips any prior version of our block (idempotent
+  # re-apply + uninstall). SENTINEL markers must stay in lock-step with
+  # the ones in install.ps1.
+  log "Appending managed block to ~/.claude/CLAUDE.md (force-load SKILL.md every session)"
   CLAUDE_PATH="$HOME/.claude/CLAUDE.md"
-  if [ "$DRY_RUN" = "1" ]; then
-    echo "  DRY-RUN: would write $CLAUDE_PATH"
-  else
-    cat > "$CLAUDE_PATH" <<MDEOF
+  DRY="$DRY_RUN" SKILL_DIR_ABS="$DEST" CLAUDE_MD_PATH="$CLAUDE_PATH" python3 - <<'PYEOF'
+import os, re, sys
+
+dry = os.environ["DRY"] == "1"
+claude_md = os.environ["CLAUDE_MD_PATH"]
+skill_md  = f"{os.environ['SKILL_DIR_ABS']}/SKILL.md"
+
+SENTINEL_OPEN  = "<!-- >>> meta-orchestrator (managed block, do not edit) >>>"
+SENTINEL_CLOSE = "<!-- <<< meta-orchestrator <<<"
+
+block = fr"""{SENTINEL_OPEN}
 # Auto-installed by meta-orchestrator/install.sh
+# This block is owned by the installer. Re-running install.sh re-applies
+# it idempotently; --uninstall strips it. Anything outside these sentinels
+# is yours to edit.
 
 ## Always-loaded skills
 
@@ -175,33 +234,62 @@ The following skill must be available in EVERY Claude Code session,
 regardless of prompt content. This is force-loaded via CLAUDE.md, not
 relying on description matching.
 
-@$DEST/SKILL.md
+@{skill_md}
 
 ## Behavior
 
-- Treat \`meta-orchestrator\` as default-on. Do not ask the user
-  "should I load it?" — it is already loaded.
-- Honor explicit opt-out keywords: \`skip\`, \`--no\`, \`don't run orchestrator\`.
+- Treat `meta-orchestrator` as default-on. Do not ask the user
+  "should I load it?" -- it is already loaded.
+- Honor explicit opt-out keywords: `skip`, `--no`, `don't run orchestrator`.
 - After every response, emit the
-  \`<!-- meta-orchestrator: sig=... family=... matched=... -->\`
-  marker (or call \`orchestrator.py record\` directly) so the Stop hook
+  `<!-- meta-orchestrator: sig=... family=... matched=... -->`
+  marker (or call `orchestrator.py record` directly) so the Stop hook
   can update pattern memory.
 - Run Step 0 (check workflows/*.yaml) before improvising any non-trivial
   multi-step plan.
 
 ## What this skill does (TL;DR)
 
-1. \`workflows/*.yaml\` holds reusable DAGs. Match by \`triggers\` /
-   \`description\` before improvising.
-2. Tier every task T0–T3; T2/T3 → decompose into DAG.
-3. GATE 2 (record) → GATE 3 (check, threshold ≥3) → GATE 4 (propose
-   crystallization) → workflow file written.
+1. `workflows/*.yaml` holds reusable DAGs. Match by `triggers` /
+   `description` before improvising.
+2. Tier every task T0-T3; T2/T3 -> decompose into DAG.
+3. GATE 2 (record) -> GATE 3 (check, threshold >=3) -> GATE 4 (propose
+   crystallization) -> workflow file written.
 
-When a pattern's count reaches 3, the hook prompts the user: \`y\` to
-write a workflow file, \`n\` to archive as declined.
-MDEOF
-    ok "Wrote $CLAUDE_PATH"
-  fi
+When a pattern's count reaches 3, the hook prompts the user: `y` to
+write a workflow file, `n` to archive as declined.
+{SENTINEL_CLOSE}
+"""
+
+pattern = re.compile(
+    re.escape(SENTINEL_OPEN) + r".*?" + re.escape(SENTINEL_CLOSE) + r"\n*",
+    re.DOTALL,
+)
+
+existing = ""
+if os.path.exists(claude_md):
+    with open(claude_md, encoding="utf-8") as f:
+        existing = f.read()
+
+stripped = pattern.sub("", existing).rstrip()
+# Always preserve exactly one blank line between the user's content and
+# our block when both are present; otherwise start at top of file.
+prefix = stripped + "\n\n" if stripped else ""
+new_content = prefix + block
+
+if new_content == existing:
+    print(f"  CLAUDE.md already has current meta-orchestrator block at {claude_md}")
+    sys.exit(0)
+
+if dry:
+    print(f"  DRY-RUN: would append meta-orchestrator block to {claude_md}")
+    sys.exit(0)
+
+os.makedirs(os.path.dirname(claude_md), exist_ok=True)
+with open(claude_md, "w", encoding="utf-8") as f:
+    f.write(new_content)
+print(f"  appended meta-orchestrator block to {claude_md}")
+PYEOF
 fi
 
 # --- Codex ---

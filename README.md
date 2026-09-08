@@ -1007,6 +1007,18 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 .\install.ps1 -Uninstall
 ```
 
+### Q：installer 会覆盖我自己的 `~/.claude/CLAUDE.md` 吗？
+
+不会。两个 installer 都用**带 sentinel 的追加**策略：
+
+- 在 `~/.claude/CLAUDE.md` 末尾追加一段被
+  `<!-- >>> meta-orchestrator (managed block, do not edit) >>>` 和
+  `<!-- <<< meta-orchestrator <<<` 包住的 block
+- 再装一次会先剥离旧 block、再追加新版（幂等）
+- `--uninstall` / `-Uninstall` 只剥离这个 block，**保留用户原来写的任何内容**
+
+如果你自己也在 `CLAUDE.md` 里写项目说明 / 其他 skill 引用，安装是安全的。
+
 ### Q：怎么导出 / 备份我的 workflow 库？
 
 ```bash

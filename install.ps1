@@ -98,32 +98,6 @@ function Get-PythonCmd {
 # Windows install path stays parallel to the bash one. Each block is
 # passed to the discovered Python interpreter via stdin.
 
-$PythonPruneStopHook = @'
-import json, os, sys
-p = os.path.expanduser(os.path.join(os.environ["USERPROFILE"], ".claude", "settings.json"))
-if not os.path.exists(p):
-    sys.exit(0)
-try:
-    data = json.load(open(p, encoding="utf-8"))
-except Exception:
-    sys.exit(0)
-hooks_root = data.get("hooks", {}) if isinstance(data, dict) else {}
-st = hooks_root.get("Stop", [])
-new = []
-for hs in st:
-    if any("stop-reminder" in h.get("command", "") for h in hs.get("hooks", [])):
-        continue
-    new.append(hs)
-if not isinstance(data, dict):
-    data = {}
-data.setdefault("hooks", {})["Stop"] = new
-if os.environ.get("DRY") == "1":
-    print("  DRY-RUN: would rewrite", p)
-else:
-    json.dump(data, open(p, "w", encoding="utf-8"), indent=2)
-    print(f"  pruned Stop hook from {p}")
-'@
-
 $PythonWireStopHook = @'
 import json, os, sys
 dry = os.environ.get("DRY") == "1"
@@ -148,6 +122,118 @@ else:
     print(f"  Stop hook configured at {p}")
 '@
 
+# Prune only the Stop hook entries we added; keep any other Stop hooks
+# the user (or another tool) configured. Mirrors the bash install.sh
+# uninstall semantics.
+$PythonPruneStopHook = @'
+import json, os, sys
+dry = os.environ.get("DRY") == "1"
+p = os.path.expanduser(os.path.join(os.environ["USERPROFILE"], ".claude", "settings.json"))
+if not os.path.exists(p):
+    sys.exit(0)
+try:
+    data = json.load(open(p, encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+hooks_root = data.get("hooks", {})
+st = hooks_root.get("Stop", [])
+new = [hs for hs in st
+       if not any("stop-reminder" in h.get("command", "") for h in hs.get("hooks", []))]
+if new == st:
+    print(f"  no meta-orchestrator Stop hook found in {p}")
+    sys.exit(0)
+data["hooks"]["Stop"] = new
+if dry:
+    print(f"  DRY-RUN: would prune Stop hook from {p}")
+    sys.exit(0)
+json.dump(data, open(p, "w", encoding="utf-8"), indent=2)
+print(f"  pruned Stop hook from {p}")
+'@
+
+# Idempotent CLAUDE.md editor.
+#
+# We never *replace* the user's CLAUDE.md — only append a sentinel-delimited
+# block (or strip it on uninstall). The block we own is wrapped between two
+# unique sentinels so re-running the installer is a no-op, and uninstall
+# can peel our block out without touching anything the user wrote.
+$PythonUpsertClaudeMd = @'
+import os, re, sys
+
+dry = os.environ.get("DRY") == "1"
+claude_md = os.environ["CLAUDE_MD_PATH"]
+skill_md  = os.environ["SKILL_MD_REF"]
+SENTINEL_OPEN  = "<!-- >>> meta-orchestrator (managed block, do not edit) >>>"
+SENTINEL_CLOSE = "<!-- <<< meta-orchestrator <<<"
+
+block = f"""{SENTINEL_OPEN}
+# Auto-installed by meta-orchestrator/install.ps1
+# This block is owned by the installer. Re-running install.ps1 re-applies
+# it idempotently; -Uninstall strips it. Anything outside these sentinels
+# is yours to edit.
+
+## Always-loaded skills
+
+The following skill must be available in EVERY Claude Code session,
+regardless of prompt content. This is force-loaded via CLAUDE.md, not
+relying on description matching.
+
+@{skill_md}
+
+## Behavior
+
+- Treat `meta-orchestrator` as default-on. Do not ask the user
+  "should I load it?" -- it is already loaded.
+- Honor explicit opt-out keywords: `skip`, `--no`, `don't run orchestrator`.
+- After every response, emit the
+  `<!-- meta-orchestrator: sig=... family=... matched=... -->`
+  marker (or call `orchestrator.py record` directly) so the Stop hook
+  can update pattern memory.
+- Run Step 0 (check workflows/*.yaml) before improvising any non-trivial
+  multi-step plan.
+
+## What this skill does (TL;DR)
+
+1. `workflows/*.yaml` holds reusable DAGs. Match by `triggers` /
+   `description` before improvising.
+2. Tier every task T0-T3; T2/T3 -> decompose into DAG.
+3. GATE 2 (record) -> GATE 3 (check, threshold >=3) -> GATE 4 (propose
+   crystallization) -> workflow file written.
+
+When a pattern's count reaches 3, the hook prompts the user: `y` to
+write a workflow file, `n` to archive as declined.
+{SENTINEL_CLOSE}
+"""
+
+# Strip any prior version of our block (idempotent re-apply + uninstall).
+pattern = re.compile(
+    re.escape(SENTINEL_OPEN) + r".*?" + re.escape(SENTINEL_CLOSE) + r"\n*",
+    re.DOTALL,
+)
+
+existing = ""
+if os.path.exists(claude_md):
+    with open(claude_md, encoding="utf-8") as f:
+        existing = f.read()
+
+stripped = pattern.sub("", existing).rstrip() + ("\n" if existing.strip() else "")
+new_content = stripped + ("\n" if stripped and not stripped.endswith("\n") else "") + block
+
+if new_content == existing:
+    print(f"  CLAUDE.md already has current meta-orchestrator block at {claude_md}")
+    sys.exit(0)
+
+if dry:
+    print(f"  DRY-RUN: would append meta-orchestrator block to {claude_md}")
+    sys.exit(0)
+
+os.makedirs(os.path.dirname(claude_md), exist_ok=True)
+with open(claude_md, "w", encoding="utf-8") as f:
+    f.write(new_content)
+print(f"  appended meta-orchestrator block to {claude_md}")
+'@
+
 # --- uninstall path ------------------------------------------------------
 if ($Uninstall) {
     Write-Log "Uninstalling meta-orchestrator..."
@@ -162,22 +248,30 @@ if ($Uninstall) {
 
         if ($t -eq 'claude') {
             Invoke-Action "rm -rf $skillDir" { Remove-Item -LiteralPath $skillDir -Recurse -Force -ErrorAction SilentlyContinue }
-            Invoke-Action "rm -f $claudeMd"  { Remove-Item -LiteralPath $claudeMd -Force -ErrorAction SilentlyContinue }
 
-            # Strip the Stop hook we added, preserve any others.
+            # Strip ONLY the managed meta-orchestrator block from CLAUDE.md;
+            # anything the user wrote above / below stays untouched.
             $py = Get-PythonCmd
             if ($py) {
-                $env:USERPROFILE = $HomeDir
+                $env:USERPROFILE    = $HomeDir
+                $env:CLAUDE_MD_PATH = $claudeMd
+                $env:SKILL_MD_REF   = ''
+                $env:DRY = if ($DryRun) { '1' } else { '0' }
+                if ($DryRun) {
+                    Write-Host "  DRY-RUN: would strip meta-orchestrator block from $claudeMd (preserving other content)"
+                } else {
+                    $PythonUpsertClaudeMd | & $py -
+                }
+
+                # Strip ONLY the Stop hook we added, preserve any others.
                 $env:DRY = if ($DryRun) { '1' } else { '0' }
                 if ($DryRun) {
                     Write-Host "  DRY-RUN: would prune Stop hook from $HomeDir\.claude\settings.json"
                 } else {
-                    $env:DRY = '0'
-                    $env:USERPROFILE = $HomeDir
                     $PythonPruneStopHook | & $py -
                 }
             } else {
-                Write-Warn "python not found — manually remove the stop-reminder entry from $HomeDir\.claude\settings.json"
+                Write-Warn "python not found -- manually remove the meta-orchestrator block from $claudeMd and the stop-reminder entry from $HomeDir\.claude\settings.json"
             }
         }
         elseif ($t -eq 'codex') {
@@ -272,52 +366,18 @@ if ($Target -eq 'claude' -or $Target -eq 'both') {
         $PythonWireStopHook | & $py -
     }
 
-    # Write ~/.claude/CLAUDE.md (force-load SKILL.md every session)
+    # Upsert ~/.claude/CLAUDE.md (force-load SKILL.md every session).
+    # We APPEND a sentinel-delimited block instead of overwriting, so any
+    # user content above / below stays intact across re-installs and
+    # uninstalls. See $PythonUpsertClaudeMd for the strip-on-install
+    # idempotency.
     $claudeMdPath = Join-Path $HomeDir '.claude\CLAUDE.md'
-    Write-Log "Writing $claudeMdPath (force-load SKILL.md every session)"
-    if ($DryRun) {
-        Write-Host "  DRY-RUN: would write $claudeMdPath"
-    } else {
-        $skillMdRef = "$Dest\SKILL.md"
-        $content = @"
-# Auto-installed by meta-orchestrator/install.ps1
-
-## Always-loaded skills
-
-The following skill must be available in EVERY Claude Code session,
-regardless of prompt content. This is force-loaded via CLAUDE.md, not
-relying on description matching.
-
-@$skillMdRef
-
-## Behavior
-
-- Treat `meta-orchestrator` as default-on. Do not ask the user
-  "should I load it?" — it is already loaded.
-- Honor explicit opt-out keywords: `skip`, `--no`, `don't run orchestrator`.
-- After every response, emit the
-  `<!-- meta-orchestrator: sig=... family=... matched=... -->`
-  marker (or call `orchestrator.py record` directly) so the Stop hook
-  can update pattern memory.
-- Run Step 0 (check workflows/*.yaml) before improvising any non-trivial
-  multi-step plan.
-
-## What this skill does (TL;DR)
-
-1. `workflows/*.yaml` holds reusable DAGs. Match by `triggers` /
-   `description` before improvising.
-2. Tier every task T0-T3; T2/T3 -> decompose into DAG.
-3. GATE 2 (record) -> GATE 3 (check, threshold >=3) -> GATE 4 (propose
-   crystallization) -> workflow file written.
-
-When a pattern's count reaches 3, the hook prompts the user: `y` to
-write a workflow file, `n` to archive as declined.
-"@
-        # Use Windows-style line endings and UTF-8 (no BOM) so Claude Code reads cleanly.
-        [System.IO.File]::WriteAllText($claudeMdPath, $content, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Ok "Wrote $claudeMdPath"
-    }
-}
+    $skillMdRef   = "$Dest\SKILL.md"
+    Write-Log "Appending managed block to $claudeMdPath (force-load SKILL.md every session)"
+    $env:CLAUDE_MD_PATH = $claudeMdPath
+    $env:SKILL_MD_REF   = $skillMdRef
+    $env:DRY = if ($DryRun) { '1' } else { '0' }
+    $PythonUpsertClaudeMd | & $py -
 
 # --- Codex ---------------------------------------------------------------
 if ($Target -eq 'codex' -or $Target -eq 'both') {
