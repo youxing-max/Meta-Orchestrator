@@ -116,7 +116,10 @@ if ($Uninstall) {
         $claudeMd = Join-Path $HomeDir ".$t\CLAUDE.md"
 
         if ($t -eq 'claude') {
-            Invoke-Action "rm -rf $skillDir" { Remove-Item -LiteralPath $skillDir -Recurse -Force -ErrorAction SilentlyContinue }
+            # IMPORTANT: run the helper scripts FIRST. When the user ran
+            # `git clone ... ~/.claude/skills/meta-orchestrator` and is now
+            # invoking install.ps1 in place, $Src == $skillDir -- deleting
+            # the dir before invoking the helpers would lose them.
 
             # Strip ONLY the managed meta-orchestrator block from CLAUDE.md;
             # anything the user wrote above / below stays untouched.
@@ -142,6 +145,8 @@ if ($Uninstall) {
             } else {
                 Write-Warn "python not found -- manually remove the meta-orchestrator block from $claudeMd and the stop-reminder entry from $HomeDir\.claude\settings.json"
             }
+
+            Invoke-Action "rm -rf $skillDir" { Remove-Item -LiteralPath $skillDir -Recurse -Force -ErrorAction SilentlyContinue }
         }
         elseif ($t -eq 'codex') {
             Invoke-Action "rm -rf $skillDir" { Remove-Item -LiteralPath $skillDir -Recurse -Force -ErrorAction SilentlyContinue }
@@ -176,6 +181,21 @@ if ($LASTEXITCODE -ne 0) {
 # Copy-Item -Recurse does the job; we exclude the same patterns.
 function Sync-SkillDir {
     param([string]$Source, [string]$Destination)
+
+    # Idempotency: when the user has already copied the skill into the
+    # destination (e.g. they ran `git clone ... ~/.claude/skills/meta-orchestrator`
+    # and then run install.ps1 in place), Source == Destination. Skip the
+    # cleanup-then-recopy dance -- the files are already there.
+    # Resolve-Path on a missing path throws, so guard with Test-Path.
+    $samePath = $false
+    if ((Test-Path -LiteralPath $Source) -and (Test-Path -LiteralPath $Destination)) {
+        $samePath = ((Resolve-Path -LiteralPath $Source).Path -eq
+                     (Resolve-Path -LiteralPath $Destination).Path)
+    }
+    if ($samePath) {
+        Write-Log "Source and destination identical, skipping sync."
+        return
+    }
 
     if (-not (Test-Path $Destination)) {
         Invoke-Action "mkdir -p $Destination" { New-Item -ItemType Directory -Path $Destination -Force | Out-Null }
