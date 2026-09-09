@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `install.sh` / `install.ps1` both use the same Claude Code settings
   path on their respective platforms (`~/.claude/settings.json` on POSIX,
   `%USERPROFILE%\.claude\settings.json` on Windows).
+- **`jq` is now a soft dependency**, not a hard install gate. Previously
+  both installers called `exit 1` if `jq` wasn't on PATH, which blocked
+  installation on machines that didn't have it yet. jq is only needed
+  by Claude Code itself when *firing* the Stop hook (to parse stdin),
+  not by anything the installer does. Both installers now warn + skip
+  the wire-stop-hook step if jq is missing, but still sync the skill
+  files, write CLAUDE.md, and run the self-check. README prerequisites
+  updated to mark jq optional.
 
 ## [0.x] — historical
 

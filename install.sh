@@ -169,16 +169,22 @@ fi
 log "Installing meta-orchestrator from: $SRC"
 
 # dependency check
-for dep in python3 jq; do
-  if ! command -v "$dep" >/dev/null 2>&1; then
-    err "missing dependency: $dep"
-    case "$dep" in
-      jq) err "install with: apt install jq  /  brew install jq" ;;
-      python3) err "install Python 3.8+" ;;
-    esac
-    exit 1
-  fi
-done
+# python3 is hard-required (the install helpers are Python scripts).
+# jq is soft-required: it's only used by Claude Code itself to parse
+# hook input, not by anything we run here. If jq is missing we warn
+# and continue -- the skill files will still sync, CLAUDE.md will be
+# written, self-check will run. The Stop hook wiring step will be
+# skipped and the user will get a hint to install jq before next run.
+if ! command -v python3 >/dev/null 2>&1; then
+  err "missing dependency: python3"
+  err "install with: apt install python3  /  brew install python3"
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  warn "jq not found on PATH -- the Stop hook wiring step will be skipped."
+  warn "install with: apt install jq  /  brew install jq  /  winget install jqlang.jq"
+  warn "(everything else below will still run.)"
+fi
 
 # python pyyaml check
 if ! python3 -c "import yaml" 2>/dev/null; then
@@ -199,6 +205,14 @@ if [ "$TARGET" = "claude" ] || [ "$TARGET" = "both" ]; then
   ok "Skill files synced to $DEST"
 
   # Wire Stop hook
+  if ! command -v jq >/dev/null 2>&1; then
+    # We still wire the hook (it doesn't need jq at install time) --
+    # the JSON edit is done in pure Python below. We just don't get
+    # the on-disk stop hook to fire correctly until jq is installed
+    # because the hook script itself uses jq to parse stdin.
+    warn "jq is missing: the Stop hook will be wired but not functional"
+    warn "until jq is installed (apt/brew/winget install jq)."
+  fi
   log "Wiring Stop hook in ~/.claude/settings.json"
   HOOK_CMD="bash $DEST/hooks/claude-code-stop-reminder.sh"
   DRY="$DRY_RUN" SKILL_DIR_ABS="$DEST" HOOK_CMD_ABS="$HOOK_CMD" python3 - <<'PYEOF'

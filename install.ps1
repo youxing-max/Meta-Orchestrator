@@ -160,13 +160,24 @@ if ($Uninstall) {
 # --- install path --------------------------------------------------------
 Write-Log "Installing meta-orchestrator from: $Src"
 
-# dependency checks
-Test-Dependency -Name 'jq'   -InstallHint 'winget install jqlang.jq  /  choco install jq'
+# Dependency checks.
+# python3 is hard-required (the install helpers are Python scripts).
+# jq is soft-required: it's only used by Claude Code itself to parse
+# Stop hook stdin, not by anything we run here. If jq is missing we
+# warn and continue -- skill files still sync, CLAUDE.md still gets
+# written, self-check still runs. The Stop hook wiring step still
+# runs (the JSON edit is pure Python) but won't fire correctly until
+# jq is installed.
 $py = Get-PythonCmd
 if (-not $py) {
     Write-Err "missing dependency: python3"
     Write-Err "install with: winget install Python.Python.3.12  /  choco install python3"
     exit 1
+}
+$jqAvailable = $null -ne (Get-Command 'jq' -ErrorAction SilentlyContinue)
+if (-not $jqAvailable) {
+    Write-Warn "jq not found on PATH -- the Stop hook will be wired but not functional until jq is installed."
+    Write-Warn "install with: winget install jqlang.jq  /  choco install jq"
 }
 
 # PyYAML check

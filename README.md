@@ -85,16 +85,18 @@
 
 ### 0. 前置条件
 
-- **Python 3.8+**
+- **Python 3.8+** — **必需**（安装脚本本身用 Python 写 CLAUDE.md / settings.json）
   - macOS / Linux：系统自带或 `brew install python3` / `apt install python3`
   - Windows：`winget install Python.Python.3.12` 或 `choco install python3`
   - 验证：`python3 --version`
 - **PyYAML**：`pip install pyyaml`
-- **jq**（Claude Code Stop hook 用来读 JSON）
+- **jq** — *可选*，但 Claude Code 的 Stop hook 需要它来解析 stdin。如果你没装，installer 会照常装 skill / 写 CLAUDE.md / 跑自检，只是 hook 暂时不工作，提示让你装上 jq 后再跑一次 `./install.sh` 即可生效
   - macOS / Linux：`brew install jq` / `apt install jq`
   - Windows：`winget install jqlang.jq` / `choco install jq`
 - **Claude Code** 或 **Codex** 任一已安装
 - Windows 用户额外需要 **PowerShell 5.1+**（Win10/11 自带）或 PowerShell 7+
+
+> 之所以把 jq 降级为可选：装 meta-orchestrator 的本意是让它自动记录 invocation、结晶 workflow。jq 只是 Claude Code 触发 hook 时读 stdin 用的，跟"装这个 skill"是两件事 —— 不应该让一个 optional 工具的存在与否卡住整个安装。
 
 ### 方式 A：一键安装（推荐）
 
@@ -469,11 +471,11 @@ python $env:USERPROFILE\.claude\skills\meta-orchestrator\scripts\validate_dag.py
 
 | 组件 | 推荐安装方式 |
 |------|--------------|
-| Python 3.8+ | `winget install Python.Python.3.12` 或 `choco install python3` |
+| Python 3.8+（必需） | `winget install Python.Python.3.12` 或 `choco install python3` |
 | PyYAML | `pip install pyyaml` |
-| jq | `winget install jqlang.jq` 或 `choco install jq` |
-| bash（跑 hook 用） | Git for Windows 自带，或 WSL |
+| bash（跑 hook 用，必需） | Git for Windows 自带，或 WSL |
 | PowerShell 5.1+ | Win10/11 自带；想用新版可 `winget install Microsoft.PowerShell` |
+| jq（可选） | `winget install jqlang.jq` 或 `choco install jq` |
 
 > Stop hook 在 Windows 上仍是一行 `bash <skill>/hooks/claude-code-stop-reminder.sh`。
 > Claude Code 在 `%USERPROFILE%\.claude\settings.json` 里执行这个命令，所以 `bash` 必须在 PATH 上（Git Bash 默认安装即满足）。
@@ -949,8 +951,9 @@ drain：把所有匹配 signature 的 invocations 移到 archived_patterns
 # 1. settings.json 有没有写进去
 cat ~/.claude/settings.json | jq '.hooks.Stop'
 
-# 2. jq 装没装
-which jq
+# 2. hook 脚本能跑通不（确认 bash 在 PATH 上）
+bash ~/.claude/skills/meta-orchestrator/hooks/claude-code-stop-reminder.sh < /dev/null
+```
 
 # 3. 手动跑一次 hook 看输出
 echo '{"stop_hook_active": false, "transcript_path": "/dev/null"}' | \
@@ -992,8 +995,8 @@ echo '{"stop_hook_active": false, "transcript_path": "/dev/null"}' | \
 
 依赖安装走 `winget` / `choco`：
 
-- `winget install Python.Python.3.12 jqlang.jq Git.Git`
-- 或者 `choco install python3 jq git`
+- `winget install Python.Python.3.12 Git.Git`（jq 可选：装完再加 `winget install jqlang.jq`）
+- 或者 `choco install python3 git`（jq 可选：`choco install jq`）
 
 如果 PowerShell 报 "running scripts is disabled on this system"，先放宽当前用户的执行策略：
 
