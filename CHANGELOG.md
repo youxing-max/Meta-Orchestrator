@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the wire-stop-hook step if jq is missing, but still sync the skill
   files, write CLAUDE.md, and run the self-check. README prerequisites
   updated to mark jq optional.
+- **`jq` and `PyYAML` are now auto-installed by both installers when
+  missing and a working package manager is available.** The bash
+  installer tries `apt-get` → `dnf` → `yum` → `brew` → `choco` (root
+  or `sudo -n` non-interactive). The PowerShell installer tries
+  `winget` → `choco` → `scoop`. If all branches fail (no pm, no
+  NOPASSWD sudo, install error) the install still proceeds and warns.
+  PyYAML install path now falls through `pip` → `python3 -m pip` →
+  distro package (`python3-yaml`), so PEP 668 / minimal-container
+  installs no longer hard-fail.
 
 ## [0.x] — historical
 

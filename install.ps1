@@ -176,15 +176,71 @@ if (-not $py) {
 }
 $jqAvailable = $null -ne (Get-Command 'jq' -ErrorAction SilentlyContinue)
 if (-not $jqAvailable) {
-    Write-Warn "jq not found on PATH -- the Stop hook will be wired but not functional until jq is installed."
-    Write-Warn "install with: winget install jqlang.jq  /  choco install jq"
+    Write-Warn "jq not found on PATH -- attempting auto-install so the Stop hook actually fires."
+
+    $jqInstalled = $false
+    # Try package managers in order. winget is the most common on Win10/11
+    # but requires user confirmation by default; choco is non-interactive.
+    # scoop is also non-interactive if installed. We never fail the install
+    # if all of these fail -- we just warn again at the end.
+    if ($null -ne (Get-Command 'winget' -ErrorAction SilentlyContinue)) {
+        # winget requires --accept-package-agreements and possibly --scope user.
+        # Try non-interactive install. May prompt for UAC.
+        $p = Start-Process -FilePath 'winget' -ArgumentList @(
+            'install', '--id', 'jqlang.jq', '-e',
+            '--accept-source-agreements', '--accept-package-agreements'
+        ) -PassThru -Wait -NoNewWindow -RedirectStandardOutput 'NUL' -ErrorAction SilentlyContinue
+        if ($p.ExitCode -eq 0 -and ($null -ne (Get-Command 'jq' -ErrorAction SilentlyContinue))) {
+            $jqInstalled = $true
+        }
+    }
+    if (-not $jqInstalled -and ($null -ne (Get-Command 'choco' -ErrorAction SilentlyContinue))) {
+        $p = Start-Process -FilePath 'choco' -ArgumentList @('install', '-y', 'jq') `
+            -PassThru -Wait -NoNewWindow -RedirectStandardOutput 'NUL' -ErrorAction SilentlyContinue
+        if ($p.ExitCode -eq 0 -and ($null -ne (Get-Command 'jq' -ErrorAction SilentlyContinue))) {
+            $jqInstalled = $true
+        }
+    }
+    if (-not $jqInstalled -and ($null -ne (Get-Command 'scoop' -ErrorAction SilentlyContinue))) {
+        & scoop install jq 2>$null | Out-Null
+        if ($null -ne (Get-Command 'jq' -ErrorAction SilentlyContinue)) {
+            $jqInstalled = $true
+        }
+    }
+
+    # PowerShell's process PATH cache can lag behind child-process installs.
+    # Re-resolve via $env:PATH so the rest of this script sees the new binary.
+    if ($jqInstalled) {
+        $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + `
+                    [System.Environment]::GetEnvironmentVariable('PATH', 'User') + ';' + `
+                    $env:PATH
+        $jqAvailable = $true
+        Write-Ok "jq auto-installed successfully."
+    } else {
+        Write-Warn "Could not auto-install jq (no package manager available, or install failed)."
+        Write-Warn "Install it manually: winget install jqlang.jq  /  choco install jq"
+        Write-Warn "Everything else below will still run; the Stop hook just won't fire until jq is present."
+    }
 }
 
-# PyYAML check
+# PyYAML check (soft-dep; used only by pattern-memory auto-bootstrap).
+# Try pip first, then `py -m pip` and `python -m pip` for PEP 668 envs.
 $pyYamlOk = & $py -c "import yaml" 2>$null
 if ($LASTEXITCODE -ne 0) {
-    Write-Warn "PyYAML not installed — running: pip install pyyaml"
-    if (-not $DryRun) { pip install pyyaml | Out-Null }
+    Write-Warn "PyYAML not installed — attempting install so pattern-memory auto-bootstrap works."
+    if (-not $DryRun) {
+        $installed = $false
+        if ($null -ne (Get-Command 'pip' -ErrorAction SilentlyContinue)) {
+            pip install pyyaml | Out-Null; $installed = ($LASTEXITCODE -eq 0)
+        }
+        if (-not $installed) {
+            & $py -m pip install pyyaml | Out-Null 2>$null
+            $installed = ($LASTEXITCODE -eq 0)
+        }
+        if (-not $installed) {
+            Write-Warn "PyYAML install failed — continuing without it (pattern-memory auto-bootstrap will warn)."
+        }
+    }
 }
 
 # --- sync helper ---------------------------------------------------------

@@ -181,15 +181,64 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 if ! command -v jq >/dev/null 2>&1; then
-  warn "jq not found on PATH -- the Stop hook wiring step will be skipped."
-  warn "install with: apt install jq  /  brew install jq  /  winget install jqlang.jq"
-  warn "(everything else below will still run.)"
+  warn "jq not found on PATH -- attempting auto-install so the Stop hook actually fires."
+  jq_installed=0
+  # Try package managers in order of how widely they're used on each OS.
+  # We never fail the install if all of these fail -- we just warn again
+  # at the end and let the user resolve it on their next pass.
+  if command -v apt-get >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ]; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq >/dev/null 2>&1 && jq_installed=1
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq >/dev/null 2>&1 && jq_installed=1
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ]; then
+      dnf install -y -q jq >/dev/null 2>&1 && jq_installed=1
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo -n dnf install -y -q jq >/dev/null 2>&1 && jq_installed=1
+    fi
+  elif command -v yum >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ]; then
+      yum install -y -q jq >/dev/null 2>&1 && jq_installed=1
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo -n yum install -y -q jq >/dev/null 2>&1 && jq_installed=1
+    fi
+  elif command -v brew >/dev/null 2>&1; then
+    brew install jq >/dev/null 2>&1 && jq_installed=1
+  elif command -v choco >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ]; then
+      choco install -y jq >/dev/null 2>&1 && jq_installed=1
+    fi
+  fi
+  if [ "$jq_installed" = "1" ] && command -v jq >/dev/null 2>&1; then
+    ok "jq auto-installed successfully."
+  else
+    warn "Could not auto-install jq (no package manager available, no sudo, or install failed)."
+    warn "Install it manually: apt install jq  /  brew install jq  /  winget install jqlang.jq"
+    warn "Everything else below will still run; the Stop hook just won't fire until jq is present."
+  fi
 fi
 
-# python pyyaml check
+# python pyyaml check (soft-dep; used only by pattern-memory auto-bootstrap).
+# Try pip first, then python3 -m pip (works in PEP 668 environments).
 if ! python3 -c "import yaml" 2>/dev/null; then
-  warn "PyYAML not installed — running: pip install pyyaml"
-  run "pip install pyyaml"
+  warn "PyYAML not installed — attempting install so pattern-memory auto-bootstrap works."
+  if command -v pip >/dev/null 2>&1; then
+    run "pip install pyyaml"
+  elif python3 -m pip --version >/dev/null 2>&1; then
+    run "python3 -m pip install pyyaml"
+  elif command -v apt-get >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ]; then
+      run "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-yaml"
+    elif command -v sudo >/dev/null 2>&1; then
+      run "sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-yaml"
+    else
+      warn "PyYAML missing and no pip/apt available — continuing without it."
+    fi
+  else
+    warn "PyYAML missing and no pip/apt available — continuing without it."
+  fi
 fi
 
 # --- Claude Code ---
@@ -205,14 +254,6 @@ if [ "$TARGET" = "claude" ] || [ "$TARGET" = "both" ]; then
   ok "Skill files synced to $DEST"
 
   # Wire Stop hook
-  if ! command -v jq >/dev/null 2>&1; then
-    # We still wire the hook (it doesn't need jq at install time) --
-    # the JSON edit is done in pure Python below. We just don't get
-    # the on-disk stop hook to fire correctly until jq is installed
-    # because the hook script itself uses jq to parse stdin.
-    warn "jq is missing: the Stop hook will be wired but not functional"
-    warn "until jq is installed (apt/brew/winget install jq)."
-  fi
   log "Wiring Stop hook in ~/.claude/settings.json"
   HOOK_CMD="bash $DEST/hooks/claude-code-stop-reminder.sh"
   DRY="$DRY_RUN" SKILL_DIR_ABS="$DEST" HOOK_CMD_ABS="$HOOK_CMD" python3 - <<'PYEOF'
